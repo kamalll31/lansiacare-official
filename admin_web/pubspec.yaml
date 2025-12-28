@@ -1,0 +1,91 @@
+name: admin_web
+description: Admin Dashboard for Lansia Care Platform
+version: 1.0.0
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Localization Support
+  flutter_localizations:
+    sdk: flutter
+  
+  # [WAJIB] Sesuai kemauan SDK terbaru
+  intl: ^0.20.2 
+  
+  # Core Dependencies
+  provider: ^6.1.2
+  dio: ^5.4.0
+  flutter_dotenv: ^5.1.0
+  flutter_secure_storage: ^9.0.0
+  shared_preferences: ^2.2.2
+  
+  # UI & Navigation
+  go_router: ^12.1.3
+  flutter_svg: ^2.0.9
+  
+  # Charts
+  syncfusion_flutter_charts: ^26.1.38
+  
+  # HTML Renderer
+  flutter_html: ^3.0.0
+  
+  # Form & Validation
+  # Gunakan versi terbaru yang tersedia
+  flutter_form_builder: ^9.6.0 
+  form_builder_validators: ^11.2.0
+  form_validator: ^1.0.1
+  
+  # Utilities
+  url_launcher: ^6.2.2
+  timeago: ^3.6.1
+  
+  # Multimedia
+  youtube_player_flutter: ^9.0.1
+  video_player: ^2.8.2
+  chewie: ^1.7.4
+  audioplayers: ^6.0.0
+  file_picker: ^6.1.1
+  http_parser: ^4.1.2
+
+  supabase_flutter: ^2.6.0 # Versi terbaru yang stabil
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+  build_runner: ^2.4.0 # Use the latest stable version
+# [SOLUSI PAMUNGKAS]
+# Bagian ini memaksa semua paket untuk menggunakan intl versi terbaru
+# meskipun mereka meminta versi lama. Ini aman karena intl 0.20 biasanya backward compatible.
+dependency_overrides:
+  intl: ^0.20.2
+
+flutter:
+  uses-material-design: true
+  
+  # Uncomment dan sesuaikan dengan struktur asset Anda
+assets:
+  - .env
+
+  #   - assets/images/
+  #   - assets/icons/
+  #   - .env
+  
+  # fonts:
+  #   - family: Inter
+  #     fonts:
+  #       - asset: assets/fonts/Inter-Regular.ttf
+  #         weight: 400
+  #       - asset: assets/fonts/Inter-Medium.ttf
+  #         weight: 500
+  #       - asset: assets/fonts/Inter-SemiBold.ttf
+  #         weight: 600
+  #       - asset: assets/fonts/Inter-Bold.ttf
+  #         weight: 700

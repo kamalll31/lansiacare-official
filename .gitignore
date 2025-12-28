@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+venv/
+__pycache__/
+*.pysc
+*.pyc
+.env
+.DS_Store
+.idea/
+vscode/
+build/
+admin_web/build/
+mobile_app/build/
