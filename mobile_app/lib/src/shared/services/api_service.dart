@@ -3,7 +3,9 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const String baseUrl = 'http://127.0.0.1:5000/api/v1';
+  // [FIX] Ganti Localhost dengan URL PythonAnywhere
+  // Pastikan akhiran /api/v1 ada disini
+  static const String baseUrl = 'https://kamalll31.pythonanywhere.com/api/v1';
   
   static Future<Map<String, String>> _getHeaders() async {
     try {
@@ -12,7 +14,8 @@ class ApiService {
       
       return {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
+        // Kirim token jika ada, jika kosong string interpolasi tetap aman
+        if (token.isNotEmpty) 'Authorization': 'Bearer $token',
       };
     } catch (e) {
       print('DEBUG: Error getting headers: $e');
@@ -74,7 +77,6 @@ class ApiService {
       final url = '$baseUrl$endpoint';
       
       print('DEBUG: 🔵 PUT to $url');
-      print('DEBUG: 🔵 Request data: $data');
       
       final response = await http.put(
         Uri.parse(url),
@@ -83,8 +85,6 @@ class ApiService {
       ).timeout(const Duration(seconds: 30));
       
       print('DEBUG: 🟢 PUT response status: ${response.statusCode}');
-      print('DEBUG: 🟢 PUT response body: ${response.body}');
-      
       return response;
     } catch (e) {
       print('DEBUG: 🔴 PUT error to $endpoint: $e');
@@ -105,8 +105,6 @@ class ApiService {
       ).timeout(const Duration(seconds: 30));
       
       print('DEBUG: 🟢 DELETE response status: ${response.statusCode}');
-      print('DEBUG: 🟢 DELETE response body: ${response.body}');
-      
       return response;
     } catch (e) {
       print('DEBUG: 🔴 DELETE error to $endpoint: $e');
@@ -114,7 +112,9 @@ class ApiService {
     }
   }
   
-  // Auth methods
+  // ==========================================================
+  // AUTH METHODS
+  // ==========================================================
   static Future<http.Response> register(Map<String, dynamic> userData) {
     return post('/auth/register', userData);
   }
@@ -127,7 +127,9 @@ class ApiService {
     return post('/auth/verify-otp', otpData);
   }
   
-  // Profile methods
+  // ==========================================================
+  // PROFILE & EMERGENCY
+  // ==========================================================
   static Future<http.Response> getProfile() {
     return get('/users/profile');
   }
@@ -136,7 +138,6 @@ class ApiService {
     return put('/users/profile', profileData);
   }
   
-  // Emergency methods
   static Future<http.Response> getEmergencyContacts() {
     return get('/emergency/contacts');
   }
@@ -157,14 +158,18 @@ class ApiService {
     return post('/emergency/sos', {});
   }
 
-  // Emergency stats
   static Future<http.Response> getEmergencyStats() {
     return get('/emergency/contacts/stats');
   }
 
-  // Connection check
+  // ==========================================================
+  // CONNECTION CHECK
+  // ==========================================================
   static Future<bool> checkConnection() async {
     try {
+      // NOTE: Kita request ke /auth/login pakai GET.
+      // Server akan balas 405 (Method Not Allowed) karena login harus POST.
+      // Tapi response 405 membuktikan server HIDUP. Jadi logic != 404 sudah benar.
       final response = await http.get(
         Uri.parse('$baseUrl/auth/login'),
         headers: {'Content-Type': 'application/json'},
@@ -177,9 +182,10 @@ class ApiService {
     }
   }
 
-  // Tambahkan methods ini di class ApiService:
+  // ==========================================================
+  // ACTIVITIES & FAMILY (Sesuai kode Anda)
+  // ==========================================================
 
-  // Activities methods
   static Future<http.Response> getActivities({Map<String, String>? queryParams}) {
     String endpoint = '/activities';
     if (queryParams != null && queryParams.isNotEmpty) {
@@ -209,7 +215,6 @@ class ApiService {
     return get('/activities/stats');
   }
 
-  // Family methods
   static Future<http.Response> getFamilyConnections() {
     return get('/family/connections');
   }

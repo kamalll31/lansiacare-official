@@ -3,7 +3,8 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {
-  static const String baseUrl = 'http://localhost:5000/api/v1';
+  // [FIX] URL sudah diganti ke PythonAnywhere (Cloud)
+  static const String baseUrl = 'https://kamalll31.pythonanywhere.com/api/v1';
   
   static Future<Map<String, dynamic>> register({
     required String phone,
@@ -62,6 +63,7 @@ class AuthService {
         // Save token to shared preferences
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('access_token', data['access_token']);
+        // Pastikan data['user'] di-encode ke string sebelum disimpan
         await prefs.setString('user_data', json.encode(data['user']));
         
         return {
@@ -109,9 +111,12 @@ class AuthService {
           'data': data,
         };
       } else {
+        // Handle error response dari backend
+        // Biasanya error message ada di key 'error' atau 'message'
+        final errorBody = json.decode(response.body);
         return {
           'success': false,
-          'error': json.decode(response.body)['error'],
+          'error': errorBody['error'] ?? 'Login gagal',
         };
       }
     } catch (e) {

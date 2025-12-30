@@ -5,14 +5,13 @@ class AppConfig {
   AppConfig._();
 
   // =========================================================
-  // 1. DYNAMIC CONFIGURATION (Dari file .env)
-  // Tidak bisa 'const' karena dibaca saat aplikasi berjalan (Runtime)
+  // 1. DYNAMIC CONFIGURATION
   // =========================================================
 
   /// URL Backend Flask
   static String get apiBaseUrl {
-    // Coba baca dari .env, jika tidak ada gunakan default localhost
-    return dotenv.env['API_BASE_URL'] ?? 'http://localhost:5000';
+    // [FIX] Prioritaskan .env, tapi jika gagal, fallback ke Cloud (bukan localhost)
+    return dotenv.env['API_BASE_URL'] ?? 'https://kamalll31.pythonanywhere.com/api/v1';
   }
 
   /// URL Project Supabase
@@ -26,10 +25,9 @@ class AppConfig {
   }
 
   // =========================================================
-  // 2. STATIC CONFIGURATION (Tetap seperti kode lama Anda)
+  // 2. STATIC CONFIGURATION
   // =========================================================
 
-  // App Configuration
   static const String appName = 'Lansia Care Admin';
   static const String appVersion = '1.0.0';
 
