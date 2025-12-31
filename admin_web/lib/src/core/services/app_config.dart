@@ -1,6 +1,6 @@
 class AppConfig {
-  // [FIXED] Menggunakan domain utama saja.
-  // Bagian '/api/v1' sudah ditangani oleh AuthService dan ApiService.
+  // [FIX] Hapus '/api/v1' dari sini. Cukup domain utama saja.
+  // ApiService dan AuthService Anda sudah otomatis menambahkan '/api/v1' nanti.
   static String get apiBaseUrl => 'https://kamalll31.pythonanywhere.com';
 
   static const Duration connectionTimeout = Duration(seconds: 30);

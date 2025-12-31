@@ -5,7 +5,7 @@ from flask_jwt_extended import JWTManager
 from flask_cors import CORS
 from flask_migrate import Migrate
 from dotenv import load_dotenv
-
+#
 load_dotenv()
 
 db = SQLAlchemy()
@@ -26,9 +26,18 @@ def create_app():
     jwt.init_app(app)
     migrate.init_app(app, db)
     
-    # Enable CORS for Flutter Web - FIXED
-    resources={r"/*": {"origins": "*"}} #artinya izinkan semua akses
-    CORS(app, resources={r"/*": {"origins": "*"}})
+    # [FIXED] Konfigurasi CORS Spesifik
+    # Kita harus menyebutkan alamat Vercel secara eksplisit agar Token diterima
+    CORS(app, resources={r"/*": {
+        "origins": [
+            "https://lansiacare-official.vercel.app",  # Alamat Vercel Anda (Wajib Sama Persis)
+            "http://localhost:3000",                   # Untuk testing di laptop
+            "http://127.0.0.1:3000"
+        ],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+        "supports_credentials": True
+    }})
     
     # Register blueprints
     from app.api.v1.auth import auth_bp
