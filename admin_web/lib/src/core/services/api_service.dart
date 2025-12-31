@@ -1,6 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // [UBAH] Menggunakan SharedPreferences
 import 'package:admin_web/src/core/config/app_config.dart';
 
 class ApiService {
@@ -8,19 +8,12 @@ class ApiService {
   factory ApiService() => _instance;
   
   late Dio _dio;
-
-  // [FIX] Tambahkan WebOptions agar penyimpanan token stabil di Browser
-  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
-    webOptions: WebOptions(
-      dbName: 'LansiaCareStorage',
-      publicKey: 'LansiaCareSecretKey', // Opsional, tapi bagus untuk unik
-    ),
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
+  
+  // Kita tidak perlu menyimpan instance SharedPreferences di variabel class
+  // karena kita akan memanggil .getInstance() saat butuh saja (async).
   
   ApiService._internal() {
     _dio = Dio(BaseOptions(
-      // Pastikan AppConfig.apiBaseUrl HANYA 'https://kamalll31.pythonanywhere.com'
       baseUrl: AppConfig.apiBaseUrl, 
       connectTimeout: AppConfig.connectionTimeout,
       receiveTimeout: AppConfig.apiTimeout,
@@ -36,15 +29,16 @@ class ApiService {
   void _initInterceptors() {
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        final token = await _secureStorage.read(key: 'auth_token');
+        // [FIX] Ambil Token dari SharedPreferences (Lebih stabil di Web)
+        final prefs = await SharedPreferences.getInstance();
+        final token = prefs.getString('auth_token');
         
         if (token != null && token.isNotEmpty) {
           options.headers['Authorization'] = 'Bearer $token';
         }
         
-        // [DEBUG] Print URL lengkap untuk memastikan tidak dobel /api/v1
         if (kDebugMode) {
-          print('🚀 [${options.method}] URL ASLI: ${options.uri}');
+          print('🚀 [${options.method}] URL: ${options.uri}');
         }
         
         return handler.next(options);
@@ -61,13 +55,13 @@ class ApiService {
         if (kDebugMode) {
           print('❌ [${e.response?.statusCode}] Failed: ${e.requestOptions.uri}');
           print('📝 Error Data: ${e.response?.data}');
-          print('📝 Error Message: ${e.message}');
         }
         
+        // Jika Token expired (401), hapus dari storage
         if (e.response?.statusCode == 401) {
-          print('⚠️ Unauthorized - Token Invalid/Expired');
-          await _secureStorage.delete(key: 'auth_token');
-          // Opsional: Arahkan ke halaman login jika menggunakan NavigatorKey global
+          print('⚠️ Unauthorized - Token Expired');
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.remove('auth_token');
         }
         
         return handler.next(e);
@@ -99,7 +93,6 @@ class ApiService {
   // =================================================================
 
   // --- DASHBOARD ---
-  // Pastikan path diawali dengan /api/v1 karena BaseURL Anda hanyalah Domain
   Future<Response> getDashboardStats() {
     return get('/api/v1/admin/dashboard/stats'); 
   }
@@ -107,7 +100,7 @@ class ApiService {
   // --- USERS ---
   Future<Response> getUsers({
     int page = 1,
-    int perPage = 10, // Default manual jika AppConfig error
+    int perPage = 10,
     String? role,
     String? search,
   }) {

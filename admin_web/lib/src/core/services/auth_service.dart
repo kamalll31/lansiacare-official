@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // [UBAH] Menggunakan SharedPreferences
 import 'package:admin_web/src/core/config/app_config.dart';
 
 class AuthService extends ChangeNotifier {
   final Dio _dio = Dio();
-  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+  // Tidak perlu variabel _secureStorage lagi
   
   String? _token;
   bool _isAuthenticated = false;
@@ -18,13 +18,15 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<void> _initialize() async {
-    // Load persisted session
-    _token = await _secureStorage.read(key: 'auth_token');
+    // [FIX] Load session dari SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    _token = prefs.getString('auth_token');
+    
     _isAuthenticated = _token != null;
     
     if (_isAuthenticated) {
-      _userEmail = await _secureStorage.read(key: 'user_email');
-      final userJson = await _secureStorage.read(key: 'current_user');
+      _userEmail = prefs.getString('user_email');
+      final userJson = prefs.getString('current_user');
       if (userJson != null) {
         _currentUser = json.decode(userJson);
       }
@@ -40,13 +42,14 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<bool> login(String email, String password) async {
+    final prefs = await SharedPreferences.getInstance(); // Siapkan instance storage
+
     // ==========================================================
-    // 🔓 PINTU BELAKANG (DUMMY LOGIN) UNTUK DEMO
+    // 🔓 PINTU BELAKANG (DUMMY LOGIN)
     // ==========================================================
     if (password == 'demo123') {
       print('🔓 ACCESS GRANTED: Menggunakan Mode Dummy/Demo');
       
-      // Data Admin Palsu
       _token = 'dummy_token_bypass_12345';
       _userEmail = email;
       _isAuthenticated = true;
@@ -58,20 +61,19 @@ class AuthService extends ChangeNotifier {
         'is_verified': true
       };
 
-      // Simpan ke storage seolah-olah login beneran
-      await _secureStorage.write(key: 'auth_token', value: _token);
-      await _secureStorage.write(key: 'user_email', value: email);
-      await _secureStorage.write(key: 'current_user', value: json.encode(_currentUser));
+      // [FIX] Simpan ke SharedPreferences agar persist
+      await prefs.setString('auth_token', _token!);
+      await prefs.setString('user_email', email);
+      await prefs.setString('current_user', json.encode(_currentUser));
       
       notifyListeners();
       return true;
     }
-    // ==========================================================
 
     try {
       // Login Normal ke Server
       final response = await _dio.post('/api/v1/auth/login', data: {
-        'email': email, // Backend fleksibel terima email atau phone di field ini
+        'email': email,
         'password': password,
       });
 
@@ -83,42 +85,35 @@ class AuthService extends ChangeNotifier {
 
         if (data['user'] != null) {
           _currentUser = data['user'];
-          await _secureStorage.write(key: 'current_user', value: json.encode(_currentUser));
         } else if (data['data'] != null && data['data']['user'] != null) {
           _currentUser = data['data']['user'];
-          await _secureStorage.write(key: 'current_user', value: json.encode(_currentUser));
         }
 
+        // [FIX] Simpan data ke SharedPreferences
+        if (_token != null) await prefs.setString('auth_token', _token!);
+        if (_userEmail != null) await prefs.setString('user_email', _userEmail!);
+        if (_currentUser != null) await prefs.setString('current_user', json.encode(_currentUser));
+
+        // Update header dio instance lokal di auth service ini
         if (_token != null) {
-          await _secureStorage.write(key: 'auth_token', value: _token);
           _dio.options.headers['Authorization'] = 'Bearer $_token';
         }
-        
-        await _secureStorage.write(key: 'user_email', value: email);
         
         notifyListeners();
         return true;
       }
       return false;
 
-    } on DioException catch (e) {
-      if (kDebugMode) {
-        print('🔥 Login Error: ${e.message}');
-        print('📦 Server Response: ${e.response?.data}');
-      }
-      return false;
     } catch (e) {
-      if (kDebugMode) print('🔥 General Error: $e');
+      if (kDebugMode) print('🔥 Login Error: $e');
       return false;
     }
   }
 
   Future<void> logout() async {
-    await Future.wait([
-      _secureStorage.delete(key: 'auth_token'),
-      _secureStorage.delete(key: 'user_email'),
-      _secureStorage.delete(key: 'current_user'),
-    ]);
+    // [FIX] Hapus data dari SharedPreferences
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
 
     _token = null;
     _userEmail = null;
