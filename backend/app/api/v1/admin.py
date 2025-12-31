@@ -2,10 +2,10 @@ from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
 from app.models import User, UserProfile, Activity, EmergencyContact, FamilyConnection, ContentItem, SystemLog
-# [FIX] Import Service yang sebelumnya kurang
+# [FIX] Pastikan baris ini ada
 from app.services.content_service import ContentMetadataService
 from datetime import datetime, timedelta
-from sqlalchemy import desc
+from sqlalchemy import desc, or_ # Tambahkan or_ juga
 
 admin_bp = Blueprint('admin', __name__)
 

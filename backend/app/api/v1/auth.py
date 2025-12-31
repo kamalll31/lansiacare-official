@@ -18,44 +18,65 @@ def register():
     try:
         data = request.get_json()
         
-        # Validasi input
-        if not data.get('phone') or not data.get('password'):
+        phone = data.get('phone')
+        password = data.get('password')
+
+        # [FIX 1] Validasi Input Dasar
+        if not phone or not password:
             return jsonify({'error': 'Phone dan password diperlukan', 'status': 'error'}), 400
-        
-        # Check if user already exists
-        if User.query.filter_by(phone=data['phone']).first():
-            return jsonify({'error': 'Nomor telepon sudah terdaftar', 'status': 'error'}), 400
-        
-        # Create user
-        user = User(
-            phone=data['phone'],
-            email=data.get('email'),
-            role=data.get('role', 'lansia'),
-            is_active=True,
-            is_verified=False # Belum verifikasi OTP
-        )
-        user.set_password(data['password'])
-        
-        db.session.add(user)
-        db.session.flush() # Flush agar ID user terbentuk
-        
-        # Create basic profile
-        profile = UserProfile(
-            user_id=user.id,
-            full_name=data.get('full_name', '')
-        )
-        db.session.add(profile)
+            
+        # [FIX 2] Validasi Nomor Telepon (Hanya Angka)
+        if not phone.isdigit():
+             return jsonify({'error': 'Nomor telepon hanya boleh berisi angka', 'status': 'error'}), 400
+
+        # Cek apakah user sudah ada
+        user = User.query.filter_by(phone=phone).first()
+
+        if user:
+            # [FIX 3] Logika Cerdas: Cek Status Verifikasi
+            if user.is_verified:
+                # Kalau sudah verified, baru kita tolak
+                return jsonify({'error': 'Nomor telepon sudah terdaftar', 'status': 'error'}), 400
+            else:
+                # Kalau BELUM verified, kita anggap user mau daftar ulang/resend OTP
+                # Kita update password barunya (karena mungkin dia lupa password sebelumnya)
+                user.set_password(password)
+                
+                # Update nama jika dikirim ulang
+                if data.get('full_name') and user.profile:
+                    user.profile.full_name = data.get('full_name')
+        else:
+            # User benar-benar baru
+            user = User(
+                phone=phone,
+                email=data.get('email'),
+                role=data.get('role', 'lansia'),
+                is_active=True,
+                is_verified=False # Belum verifikasi OTP
+            )
+            user.set_password(password)
+            db.session.add(user)
+            db.session.flush() # Flush agar ID user terbentuk
+            
+            # Create basic profile
+            profile = UserProfile(
+                user_id=user.id,
+                full_name=data.get('full_name', '')
+            )
+            db.session.add(profile)
+
+        # Simpan perubahan (baik user baru atau update user lama)
         db.session.commit()
         
-        # Generate OTP (simplified untuk development/demo)
-        # Mocking: Anda bisa ubah ini jadi '123456' statis kalau mau gampang pas demo
+        # [LOGIKA OTP] Generate OTP Baru
+        # Mocking: Gunakan random
         otp = str(random.randint(100000, 999999))
         otp_storage[user.phone] = {
             'otp': otp,
             'expires': datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
         }
         
-        print(f"DEBUG: OTP untuk {user.phone} adalah {otp}")  # Hapus di production!
+        print(f"DEBUG: OTP untuk {user.phone} adalah {otp}")  # Lihat ini di Server Log PythonAnywhere
         
         return jsonify({
             'status': 'success',
@@ -63,8 +84,7 @@ def register():
             'data': {
                 'user_id': user.id,
                 'requires_otp': True,
-                # Opsional: Kirim OTP balik di response buat debug di HP (Hapus pas production)
-                'debug_otp': otp 
+                'debug_otp': otp # Hapus ini nanti saat production
             }
         }), 201
         
@@ -80,30 +100,28 @@ def login():
     try:
         data = request.get_json()
         
-        # == LOGIKA SMART LOGIN ==
         # 1. Identitas: Bisa 'email' (Web) atau 'phone' (Mobile)
         login_input = data.get('email') or data.get('phone')
         
-        # 2. Kredensial: Bisa 'password' (Web) atau 'otp' (Mobile)
-        # Kita anggap OTP mobile itu password juga (karena di DB user.password adalah hash OTP/PIN)
-        secret = data.get('password') or data.get('otp')
+        # 2. Kredensial: Password
+        password = data.get('password')
 
-        if not login_input or not secret:
-            return jsonify({'error': 'Identitas (HP/Email) dan Password/OTP wajib diisi', 'status': 'error'}), 400
+        if not login_input or not password:
+            return jsonify({'error': 'Identitas (HP/Email) dan Password wajib diisi', 'status': 'error'}), 400
         
         # 3. Cari user (Cek Phone DULU, baru cek Email)
         user = User.query.filter_by(phone=login_input).first()
         if not user:
             user = User.query.filter_by(email=login_input).first()
         
-        # 4. Verifikasi Password / OTP Hash
-        if not user or not user.check_password(secret):
-            return jsonify({'error': 'Kredensial salah (Cek Nomor HP/Email atau Password/OTP)', 'status': 'error'}), 401
+        # 4. Verifikasi Password Hash
+        # PENTING: check_password membandingkan password input dengan password_hash di DB
+        if not user or not user.check_password(password):
+            return jsonify({'error': 'Kredensial salah (Cek Nomor HP/Email atau Password)', 'status': 'error'}), 401
         
-        # 5. Cek Status Verifikasi (Khusus Mobile yang butuh OTP)
-        # Admin via seed_admin sudah is_verified=True
+        # 5. Cek Status Verifikasi
         if not user.is_verified:
-             # Cek apakah ada OTP pending di storage (kasus baru register)
+             # Cek apakah ada OTP pending di storage
              if user.phone in otp_storage:
                  return jsonify({'error': 'Akun belum diverifikasi. Silakan masukkan OTP.', 'requires_otp': True, 'status': 'error'}), 401
              else:
@@ -122,28 +140,17 @@ def login():
             additional_claims={'role': user.role, 'phone': user.phone}
         )
         
-        # PENTING: Struktur JSON ini dibuat agar kompatibel dengan Flutter
-        # Token ditaruh di root ('access_token') DAN di dalam data untuk jaga-jaga
         return jsonify({
             'status': 'success',
             'message': 'Login berhasil',
-            'access_token': access_token,  # <--- INI PENTING BUAT FLUTTER LAMA
-            'token': access_token,         # <--- Alias cadangan
-            'user': {                      # <--- User ditaruh di root juga buat Flutter lama
+            'access_token': access_token,
+            'token': access_token,
+            'user': {
                 'id': user.id,
                 'phone': user.phone,
                 'role': user.role,
                 'full_name': user.profile.full_name if user.profile else "User",
                 'is_verified': user.is_verified
-            },
-            'data': {                      # <--- Struktur baru yang lebih rapi (optional)
-                'token': access_token,
-                'user': {
-                    'id': user.id,
-                    'phone': user.phone,
-                    'role': user.role,
-                    'full_name': user.profile.full_name if user.profile else "User"
-                }
             }
         }), 200
         
@@ -179,9 +186,9 @@ def verify_otp():
         user = User.query.filter_by(phone=data['phone']).first()
         if user:
             user.is_verified = True
-            # PENTING: Update password hash dengan OTP ini
-            # Agar nanti pas login, user bisa pakai OTP/PIN ini sebagai password
-            user.set_password(data['otp']) 
+            # [FIX 4] SANGAT PENTING: Hapus baris user.set_password(otp)
+            # Kita TIDAK MAU password asli user diganti dengan angka OTP
+            
             db.session.commit()
         
         # Hapus OTP dari storage

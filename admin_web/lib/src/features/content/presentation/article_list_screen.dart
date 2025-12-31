@@ -323,14 +323,13 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
                         const Spacer(),
                         
                         // UPDATED TIME (jika ada)
-                        if (content.updatedAt != null)
-                          Text(
-                            _formatDate(content.updatedAt!),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
-                            ),
+                        Text(
+                          _formatDate(content.updatedAt!),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
                           ),
+                        ),
                       ],
                     ),
                   ],
