@@ -8,11 +8,20 @@ class ApiService {
   factory ApiService() => _instance;
   
   late Dio _dio;
-  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+
+  // [FIX] Tambahkan WebOptions agar penyimpanan token stabil di Browser
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage(
+    webOptions: WebOptions(
+      dbName: 'LansiaCareStorage',
+      publicKey: 'LansiaCareSecretKey', // Opsional, tapi bagus untuk unik
+    ),
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
   
   ApiService._internal() {
     _dio = Dio(BaseOptions(
-      baseUrl: AppConfig.apiBaseUrl,
+      // Pastikan AppConfig.apiBaseUrl HANYA 'https://kamalll31.pythonanywhere.com'
+      baseUrl: AppConfig.apiBaseUrl, 
       connectTimeout: AppConfig.connectionTimeout,
       receiveTimeout: AppConfig.apiTimeout,
       headers: {
@@ -33,8 +42,9 @@ class ApiService {
           options.headers['Authorization'] = 'Bearer $token';
         }
         
+        // [DEBUG] Print URL lengkap untuk memastikan tidak dobel /api/v1
         if (kDebugMode) {
-          print('🚀 [${options.method}] ${options.uri}');
+          print('🚀 [${options.method}] URL ASLI: ${options.uri}');
         }
         
         return handler.next(options);
@@ -42,20 +52,22 @@ class ApiService {
       
       onResponse: (response, handler) {
         if (kDebugMode) {
-          print('✅ [${response.statusCode}] ${response.requestOptions.uri}');
+          print('✅ [${response.statusCode}] Success: ${response.requestOptions.uri}');
         }
         return handler.next(response);
       },
       
       onError: (DioException e, handler) async {
         if (kDebugMode) {
-          print('❌ [${e.response?.statusCode}] ${e.requestOptions.uri}');
-          print('📝 Error: ${e.response?.data}');
+          print('❌ [${e.response?.statusCode}] Failed: ${e.requestOptions.uri}');
+          print('📝 Error Data: ${e.response?.data}');
+          print('📝 Error Message: ${e.message}');
         }
         
         if (e.response?.statusCode == 401) {
           print('⚠️ Unauthorized - Token Invalid/Expired');
           await _secureStorage.delete(key: 'auth_token');
+          // Opsional: Arahkan ke halaman login jika menggunakan NavigatorKey global
         }
         
         return handler.next(e);
@@ -87,6 +99,7 @@ class ApiService {
   // =================================================================
 
   // --- DASHBOARD ---
+  // Pastikan path diawali dengan /api/v1 karena BaseURL Anda hanyalah Domain
   Future<Response> getDashboardStats() {
     return get('/api/v1/admin/dashboard/stats'); 
   }
@@ -94,7 +107,7 @@ class ApiService {
   // --- USERS ---
   Future<Response> getUsers({
     int page = 1,
-    int perPage = AppConfig.defaultPageSize,
+    int perPage = 10, // Default manual jika AppConfig error
     String? role,
     String? search,
   }) {
@@ -115,7 +128,7 @@ class ApiService {
   // --- CONTENT ITEMS ---
   Future<Response> getContentItems({ 
     int page = 1,
-    int perPage = AppConfig.defaultPageSize,
+    int perPage = 10,
     String? type,
     String? category,
     String? status,
