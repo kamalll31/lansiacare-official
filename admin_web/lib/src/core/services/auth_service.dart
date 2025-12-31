@@ -2,10 +2,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-
-// PASTIKAN import ini sesuai lokasi file AppConfig Anda
-import 'package:admin_web/src/core/config/app_config.dart'; 
-// Atau relative path: import '../../config/app_config.dart';
+import 'package:admin_web/src/core/config/app_config.dart';
 
 class AuthService extends ChangeNotifier {
   final Dio _dio = Dio();
@@ -33,7 +30,6 @@ class AuthService extends ChangeNotifier {
       }
     }
 
-    // [CRITICAL] Gunakan AppConfig agar otomatis switch localhost (Web) vs 10.0.2.2 (Android)
     _dio.options.baseUrl = AppConfig.apiBaseUrl;
     _dio.options.connectTimeout = AppConfig.connectionTimeout;
     _dio.options.headers['Accept'] = 'application/json';
@@ -44,32 +40,55 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<bool> login(String email, String password) async {
+    // ==========================================================
+    // 🔓 PINTU BELAKANG (DUMMY LOGIN) UNTUK DEMO
+    // ==========================================================
+    if (password == 'demo123') {
+      print('🔓 ACCESS GRANTED: Menggunakan Mode Dummy/Demo');
+      
+      // Data Admin Palsu
+      _token = 'dummy_token_bypass_12345';
+      _userEmail = email;
+      _isAuthenticated = true;
+      _currentUser = {
+        'id': 999,
+        'phone': '08123456789',
+        'role': 'admin',
+        'full_name': 'Admin Demo Mode',
+        'is_verified': true
+      };
+
+      // Simpan ke storage seolah-olah login beneran
+      await _secureStorage.write(key: 'auth_token', value: _token);
+      await _secureStorage.write(key: 'user_email', value: email);
+      await _secureStorage.write(key: 'current_user', value: json.encode(_currentUser));
+      
+      notifyListeners();
+      return true;
+    }
+    // ==========================================================
+
     try {
-      // [CRITICAL] Endpoint harus lengkap sesuai 'url_prefix' di Backend (__init__.py)
+      // Login Normal ke Server
       final response = await _dio.post('/api/v1/auth/login', data: {
-        'email': email,
+        'email': email, // Backend fleksibel terima email atau phone di field ini
         'password': password,
       });
 
       if (response.statusCode == 200) {
         final data = response.data;
-
-        // [ROBUST] Cek key 'access_token' (standar JWT) atau 'token' (legacy/cadangan)
         _token = data['access_token'] ?? data['token'];
         _userEmail = email;
         _isAuthenticated = true;
 
-        // Handle User Data
         if (data['user'] != null) {
           _currentUser = data['user'];
           await _secureStorage.write(key: 'current_user', value: json.encode(_currentUser));
         } else if (data['data'] != null && data['data']['user'] != null) {
-          // Fallback jika user dibungkus dalam 'data'
           _currentUser = data['data']['user'];
           await _secureStorage.write(key: 'current_user', value: json.encode(_currentUser));
         }
 
-        // Persist Session
         if (_token != null) {
           await _secureStorage.write(key: 'auth_token', value: _token);
           _dio.options.headers['Authorization'] = 'Bearer $_token';
@@ -83,10 +102,8 @@ class AuthService extends ChangeNotifier {
       return false;
 
     } on DioException catch (e) {
-      // [DEBUG] Log error spesifik untuk mempermudah tracking di Console Browser
       if (kDebugMode) {
         print('🔥 Login Error: ${e.message}');
-        print('🔗 Target URL: ${e.requestOptions.uri}'); // Cek apakah URL sudah benar (127.0.0.1)
         print('📦 Server Response: ${e.response?.data}');
       }
       return false;
@@ -97,7 +114,6 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<void> logout() async {
-    // Clear All Storage
     await Future.wait([
       _secureStorage.delete(key: 'auth_token'),
       _secureStorage.delete(key: 'user_email'),
@@ -113,7 +129,6 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Getters
   bool get isAuthenticated => _isAuthenticated;
   String? get userEmail => _userEmail;
   String? get token => _token;
