@@ -1,12 +1,11 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // [UBAH] Menggunakan SharedPreferences
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:admin_web/src/core/config/app_config.dart';
 
 class AuthService extends ChangeNotifier {
   final Dio _dio = Dio();
-  // Tidak perlu variabel _secureStorage lagi
   
   String? _token;
   bool _isAuthenticated = false;
@@ -17,36 +16,46 @@ class AuthService extends ChangeNotifier {
     _initialize();
   }
 
+  /// Inisialisasi: Cek apakah ada sesi login yang tersimpan
   Future<void> _initialize() async {
-    // [FIX] Load session dari SharedPreferences
     final prefs = await SharedPreferences.getInstance();
+    
     _token = prefs.getString('auth_token');
-    
-    _isAuthenticated = _token != null;
-    
-    if (_isAuthenticated) {
-      _userEmail = prefs.getString('user_email');
-      final userJson = prefs.getString('current_user');
+    _userEmail = prefs.getString('user_email');
+    final userJson = prefs.getString('current_user');
+
+    if (_token != null && _token!.isNotEmpty) {
+      _isAuthenticated = true;
       if (userJson != null) {
-        _currentUser = json.decode(userJson);
+        try {
+          _currentUser = json.decode(userJson);
+        } catch (e) {
+          debugPrint('Error parsing user json: $e');
+        }
       }
+      
+      // Set Header Authorization otomatis jika token ada
+      _dio.options.headers['Authorization'] = 'Bearer $_token';
     }
 
+    // Konfigurasi DIO
     _dio.options.baseUrl = AppConfig.apiBaseUrl;
     _dio.options.connectTimeout = AppConfig.connectionTimeout;
     _dio.options.headers['Accept'] = 'application/json';
     
-    if (_token != null) {
-      _dio.options.headers['Authorization'] = 'Bearer $_token';
-    }
+    // Kabari UI bahwa proses cek sesi selesai
+    notifyListeners();
   }
 
   Future<bool> login(String email, String password) async {
-    final prefs = await SharedPreferences.getInstance(); // Siapkan instance storage
+    final prefs = await SharedPreferences.getInstance();
 
     // ==========================================================
-    // 🔓 PINTU BELAKANG (DUMMY LOGIN)
+    // ⛔ [DINONAKTIFKAN] MODE DEMO / DUMMY
+    // Bagian ini dimatikan untuk mencegah Error 422 (Token Palsu).
+    // Aplikasi dipaksa menggunakan API Server Asli.
     // ==========================================================
+    /*
     if (password == 'demo123') {
       print('🔓 ACCESS GRANTED: Menggunakan Mode Dummy/Demo');
       
@@ -61,7 +70,6 @@ class AuthService extends ChangeNotifier {
         'is_verified': true
       };
 
-      // [FIX] Simpan ke SharedPreferences agar persist
       await prefs.setString('auth_token', _token!);
       await prefs.setString('user_email', email);
       await prefs.setString('current_user', json.encode(_currentUser));
@@ -69,9 +77,12 @@ class AuthService extends ChangeNotifier {
       notifyListeners();
       return true;
     }
+    */
+    // ==========================================================
 
     try {
-      // Login Normal ke Server
+      // 🟢 LOGIN NORMAL (Ke Server PythonAnywhere)
+      // Endpoint: https://kamalll31.pythonanywhere.com/api/v1/auth/login
       final response = await _dio.post('/api/v1/auth/login', data: {
         'email': email,
         'password': password,
@@ -79,22 +90,25 @@ class AuthService extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = response.data;
+        
+        // Ambil token dari respon server
         _token = data['access_token'] ?? data['token'];
         _userEmail = email;
         _isAuthenticated = true;
 
+        // Ambil data user
         if (data['user'] != null) {
           _currentUser = data['user'];
         } else if (data['data'] != null && data['data']['user'] != null) {
           _currentUser = data['data']['user'];
         }
 
-        // [FIX] Simpan data ke SharedPreferences
+        // [SIMPAN SESI] Masukkan ke SharedPreferences
         if (_token != null) await prefs.setString('auth_token', _token!);
         if (_userEmail != null) await prefs.setString('user_email', _userEmail!);
         if (_currentUser != null) await prefs.setString('current_user', json.encode(_currentUser));
 
-        // Update header dio instance lokal di auth service ini
+        // Update Header Dio agar request berikutnya membawa token ini
         if (_token != null) {
           _dio.options.headers['Authorization'] = 'Bearer $_token';
         }
@@ -102,28 +116,38 @@ class AuthService extends ChangeNotifier {
         notifyListeners();
         return true;
       }
+      
       return false;
 
     } catch (e) {
-      if (kDebugMode) print('🔥 Login Error: $e');
+      if (kDebugMode) {
+        print('🔥 Login Error: $e');
+        if (e is DioException) {
+          print('🔥 Dio Error Response: ${e.response?.data}');
+        }
+      }
       return false;
     }
   }
 
   Future<void> logout() async {
-    // [FIX] Hapus data dari SharedPreferences
     final prefs = await SharedPreferences.getInstance();
+    
+    // Hapus semua data sesi
     await prefs.clear();
 
     _token = null;
     _userEmail = null;
     _currentUser = null;
     _isAuthenticated = false;
+    
+    // Hapus header Authorization
     _dio.options.headers.remove('Authorization');
     
     notifyListeners();
   }
 
+  // Getters
   bool get isAuthenticated => _isAuthenticated;
   String? get userEmail => _userEmail;
   String? get token => _token;
