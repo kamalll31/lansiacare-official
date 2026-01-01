@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, url_for
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from sqlalchemy import desc, func, or_
 from datetime import datetime, timedelta
@@ -11,6 +11,68 @@ from app.services.content_service import ContentMetadataService
 import json
 
 content_bp = Blueprint('content', __name__)
+
+# Konfigurasi Upload
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'mp3', 'mp4', 'wav'}
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# ==============================
+# ENDPOINT BARU: UPLOAD MEDIA
+# ==============================
+@content_bp.route('/admin/upload', methods=['POST'])
+@jwt_required()
+def upload_media():
+    """Handle file upload (Images, Video, Audio)"""
+    try:
+        # Cek hak akses admin
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id)
+        if user.role != 'admin':
+            return jsonify({'success': False, 'error': 'Admin access required'}), 403
+
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file part'}), 400
+        
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'No selected file'}), 400
+            
+        if file and allowed_file(file.filename):
+            # 1. Buat nama file unik aman
+            filename = secure_filename(file.filename)
+            unique_filename = f"{uuid.uuid4().hex}_{filename}"
+            
+            # 2. Tentukan folder simpan (static/uploads)
+            upload_dir = os.path.join(current_app.root_path, 'static', 'uploads')
+            if not os.path.exists(upload_dir):
+                os.makedirs(upload_dir)
+                
+            # 3. Simpan file
+            file_path = os.path.join(upload_dir, unique_filename)
+            file.save(file_path)
+            
+            # 4. Generate URL Publik
+            # Di Production, pastikan Anda men-serve folder static dengan benar
+            file_url = url_for('static', filename=f'uploads/{unique_filename}', _external=True)
+            
+            # Mock duration (0) karena perlu library berat untuk cek durasi asli
+            return jsonify({
+                'success': True,
+                'url': file_url,
+                'filename': unique_filename,
+                'duration': 0 
+            }), 200
+            
+        return jsonify({'success': False, 'error': 'File type not allowed'}), 400
+
+    except Exception as e:
+        current_app.logger.error(f'Upload error: {e}')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 # ==============================
 # PUBLIC ENDPOINTS (MOBILE APP)
@@ -29,7 +91,7 @@ def get_public_content():
         # Build query
         query = ContentItem.query.filter_by(is_published=True)
         
-        if category:
+        if category and category != 'semua':
             query = query.filter_by(category=category)
         
         if content_type:
@@ -45,8 +107,6 @@ def get_public_content():
         # Format for mobile app
         content_data = []
         for item in content_items:
-            item_data = item.to_dict()
-            
             # Simplify for mobile
             mobile_data = {
                 'id': item.id,
@@ -87,16 +147,19 @@ def get_public_content():
             
             # Track view if user is logged in
             if user_id:
-                consumption = ContentConsumption(
-                    content_id=item.id,
-                    user_id=user_id,
-                    consumption_type='view',
-                    start_time=datetime.utcnow(),
-                    device_type=request.user_agent.string,
-                    player_used=item.content_type.split('_')[-1]  # video, audio, etc
-                )
-                db.session.add(consumption)
-                db.session.commit()
+                try:
+                    consumption = ContentConsumption(
+                        content_id=item.id,
+                        user_id=user_id,
+                        consumption_type='view',
+                        start_time=datetime.utcnow(),
+                        device_type=request.user_agent.string,
+                        player_used=item.content_type.split('_')[-1]
+                    )
+                    db.session.add(consumption)
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback() # Ignore error to prevent blocking response
         
         return jsonify({
             'success': True,
@@ -200,16 +263,17 @@ def analyze_url():
         
         return jsonify({
             'success': True,
-            **analysis
+            'analysis': analysis # Use key 'analysis' for frontend consistency
         }), 200
         
     except Exception as e:
         current_app.logger.error(f'Error analyzing URL: {e}')
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@content_bp.route('/admin', methods=['GET'])
+# ENDPOINT: LIST ALL CONTENT
+@content_bp.route('/admin/items', methods=['GET']) # Changed from /admin to /admin/items for clarity
 @jwt_required()
-def get_all_content():
+def get_all_content_admin():
     """Get all content for admin"""
     try:
         user_id = get_jwt_identity()
@@ -254,7 +318,7 @@ def get_all_content():
         
         return jsonify({
             'success': True,
-            'content': content_data,
+            'items': content_data, # Frontend expects 'items'
             'pagination': {
                 'page': page,
                 'per_page': per_page,
@@ -267,7 +331,27 @@ def get_all_content():
         current_app.logger.error(f'Error getting all content: {e}')
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@content_bp.route('/admin', methods=['POST'])
+# ENDPOINT: SINGLE ITEM DETAIL
+@content_bp.route('/admin/items/<int:content_id>', methods=['GET'])
+@jwt_required()
+def get_content_item_admin(content_id):
+    """Get single content item for admin"""
+    try:
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id)
+        if user.role != 'admin':
+            return jsonify({'success': False, 'error': 'Admin access required'}), 403
+
+        content = ContentItem.query.get_or_404(content_id)
+        return jsonify({
+            'success': True,
+            'content': content.to_dict()
+        }), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ENDPOINT: CREATE CONTENT
+@content_bp.route('/admin/items', methods=['POST'])
 @jwt_required()
 def create_content():
     """Create new content (hybrid)"""
@@ -286,27 +370,24 @@ def create_content():
         
         content_type = data.get('content_type', 'embedded_video')
         
+        # --- Logic "Safety Net" dari kode asli Anda ---
         # Validate based on content type
         if content_type.startswith('embedded'):
             if not data.get('embed_url'):
                 return jsonify({'success': False, 'error': 'Embed URL required'}), 400
             
-            # Analyze URL to get metadata
+            # Analyze URL to get metadata (Auto-fill safety net)
             analysis = ContentMetadataService.analyze_url(data['embed_url'])
             if not analysis['is_valid']:
                 return jsonify({'success': False, 'error': 'Invalid embed URL'}), 400
             
-            # Auto-fill from analysis
-            if not data.get('embed_provider'):
-                data['embed_provider'] = analysis['provider']
-            if not data.get('embed_id'):
-                data['embed_id'] = analysis['id']
-            if not data.get('embed_type'):
-                data['embed_type'] = analysis['type']
-            if not data.get('embed_code') and analysis['embed_code']:
-                data['embed_code'] = analysis['embed_code']
+            # Auto-fill from analysis if fields are missing
+            if not data.get('embed_provider'): data['embed_provider'] = analysis['provider']
+            if not data.get('embed_id'): data['embed_id'] = analysis['id']
+            if not data.get('embed_type'): data['embed_type'] = analysis['type']
+            if not data.get('embed_code') and analysis['embed_code']: data['embed_code'] = analysis['embed_code']
             
-            # Use metadata for title/description if not provided
+            # Use metadata for title/description/thumbnail if not provided
             if analysis['metadata']:
                 metadata = analysis['metadata']
                 if not data.get('excerpt') and metadata.get('description'):
@@ -360,14 +441,10 @@ def create_content():
             
             # Calculate accessibility score
             score = 0
-            if content.has_subtitles:
-                score += 30
-            if content.has_transcript:
-                score += 30
-            if content.has_audio_description:
-                score += 20
-            if content.is_audio_only:
-                score += 20
+            if content.has_subtitles: score += 30
+            if content.has_transcript: score += 30
+            if content.has_audio_description: score += 20
+            if content.is_audio_only: score += 20
             content.accessibility_score = min(score, 100)
         
         elif content_type == 'article':
@@ -404,7 +481,7 @@ def create_content():
         current_app.logger.error(f'Error creating content: {e}')
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@content_bp.route('/admin/<int:content_id>', methods=['PUT'])
+@content_bp.route('/admin/items/<int:content_id>', methods=['PUT'])
 @jwt_required()
 def update_content(content_id):
     """Update content"""
@@ -438,21 +515,6 @@ def update_content(content_id):
             elif not data['is_published']:
                 content.published_at = None
         
-        # Update accessibility score
-        if content.content_type.startswith('uploaded'):
-            score = 0
-            if content.has_subtitles:
-                score += 30
-            if content.has_transcript:
-                score += 30
-            if content.has_audio_description:
-                score += 20
-            if content.is_audio_only:
-                score += 20
-            content.accessibility_score = min(score, 100)
-        elif content.content_type == 'article':
-            content.accessibility_score = 50
-        
         content.updated_at = datetime.utcnow()
         
         # Update transcript
@@ -485,7 +547,7 @@ def update_content(content_id):
         current_app.logger.error(f'Error updating content: {e}')
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@content_bp.route('/admin/<int:content_id>', methods=['DELETE'])
+@content_bp.route('/admin/items/<int:content_id>', methods=['DELETE'])
 @jwt_required()
 def delete_content(content_id):
     """Delete content"""
