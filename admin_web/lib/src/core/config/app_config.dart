@@ -10,8 +10,10 @@ class AppConfig {
 
   /// URL Backend Flask
   static String get apiBaseUrl {
-    // [FIX] Prioritaskan .env, tapi jika gagal, fallback ke Cloud (bukan localhost)
-    return dotenv.env['API_BASE_URL'] ?? 'https://kamalll31.pythonanywhere.com/api/v1';
+    // [FIX] HAPUS '/api/v1' DARI SINI
+    // Cukup domain saja: 'https://kamalll31.pythonanywhere.com'
+    // Karena ApiService akan menggabungkannya menjadi: domain + /api/v1 + /endpoint
+    return dotenv.env['API_BASE_URL'] ?? 'https://kamalll31.pythonanywhere.com';
   }
 
   /// URL Project Supabase

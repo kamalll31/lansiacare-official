@@ -37053,7 +37053,7 @@ b7N(a,b,c){var s=null
 return c.a(A.bmr(a,b,s,s,s,s))},
 b7M(a,b,c){return c.a(A.bvQ(a,[b]))},
 b5q(){var s=$.aix().gQt().h(0,"API_BASE_URL")
-return s==null?"https://kamalll31.pythonanywhere.com/api/v1":s},
+return s==null?"https://kamalll31.pythonanywhere.com":s},
 aHX(){var s=0,r=A.u(t.H),q,p
 var $async$aHX=A.v(function(a,b){if(a===1)return A.q(b,r)
 while(true)switch(s){case 0:p=$.aix().gQt().h(0,"SUPABASE_URL")
