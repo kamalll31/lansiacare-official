@@ -16,7 +16,7 @@ class AuthService extends ChangeNotifier {
     _initialize();
   }
 
-  /// Inisialisasi: Cek apakah ada sesi login yang tersimpan
+  /// Inisialisasi: Memuat sesi login yang tersimpan (Auto-Login)
   Future<void> _initialize() async {
     final prefs = await SharedPreferences.getInstance();
     
@@ -24,91 +24,71 @@ class AuthService extends ChangeNotifier {
     _userEmail = prefs.getString('user_email');
     final userJson = prefs.getString('current_user');
 
+    // Konfigurasi DIO (Base URL & Timeouts)
+    _dio.options.baseUrl = AppConfig.apiBaseUrl;
+    _dio.options.connectTimeout = AppConfig.connectionTimeout;
+    _dio.options.receiveTimeout = AppConfig.apiTimeout;
+    _dio.options.headers['Accept'] = 'application/json';
+
     if (_token != null && _token!.isNotEmpty) {
       _isAuthenticated = true;
+      
+      // Set Header Authorization otomatis agar request berikutnya valid
+      _dio.options.headers['Authorization'] = 'Bearer $_token';
+
       if (userJson != null) {
         try {
           _currentUser = json.decode(userJson);
         } catch (e) {
           debugPrint('Error parsing user json: $e');
+          // Jika data user rusak, anggap logout demi keamanan
+          await logout(); 
         }
       }
-      
-      // Set Header Authorization otomatis jika token ada
-      _dio.options.headers['Authorization'] = 'Bearer $_token';
     }
-
-    // Konfigurasi DIO
-    _dio.options.baseUrl = AppConfig.apiBaseUrl;
-    _dio.options.connectTimeout = AppConfig.connectionTimeout;
-    _dio.options.headers['Accept'] = 'application/json';
     
-    // Kabari UI bahwa proses cek sesi selesai
     notifyListeners();
   }
 
+  /// Fungsi Login Utama
   Future<bool> login(String email, String password) async {
     final prefs = await SharedPreferences.getInstance();
 
-    // ==========================================================
-    // ⛔ [DINONAKTIFKAN] MODE DEMO / DUMMY
-    // Bagian ini dimatikan untuk mencegah Error 422 (Token Palsu).
-    // Aplikasi dipaksa menggunakan API Server Asli.
-    // ==========================================================
-    /*
-    if (password == 'demo123') {
-      print('🔓 ACCESS GRANTED: Menggunakan Mode Dummy/Demo');
-      
-      _token = 'dummy_token_bypass_12345';
-      _userEmail = email;
-      _isAuthenticated = true;
-      _currentUser = {
-        'id': 999,
-        'phone': '08123456789',
-        'role': 'admin',
-        'full_name': 'Admin Demo Mode',
-        'is_verified': true
-      };
-
-      await prefs.setString('auth_token', _token!);
-      await prefs.setString('user_email', email);
-      await prefs.setString('current_user', json.encode(_currentUser));
-      
-      notifyListeners();
-      return true;
-    }
-    */
-    // ==========================================================
-
     try {
-      // 🟢 LOGIN NORMAL (Ke Server PythonAnywhere)
-      // Endpoint: https://kamalll31.pythonanywhere.com/api/v1/auth/login
+      // 🟢 [FIX UTAMA] .trim()
+      // Membersihkan spasi di awal/akhir input yang sering tidak sengaja tertulis
+      final cleanEmail = email.trim();
+      final cleanPassword = password.trim(); 
+
+      // Request ke Server Asli
       final response = await _dio.post('/api/v1/auth/login', data: {
-        'email': email,
-        'password': password,
+        'email': cleanEmail,
+        'password': cleanPassword,
       });
 
       if (response.statusCode == 200) {
         final data = response.data;
         
-        // Ambil token dari respon server
+        // 1. Ambil Token (Support berbagai format response)
         _token = data['access_token'] ?? data['token'];
-        _userEmail = email;
-        _isAuthenticated = true;
-
-        // Ambil data user
+        
+        // 2. Ambil Data User
         if (data['user'] != null) {
           _currentUser = data['user'];
         } else if (data['data'] != null && data['data']['user'] != null) {
           _currentUser = data['data']['user'];
         }
 
-        // [SIMPAN SESI] Masukkan ke SharedPreferences
+        // 3. Set State Lokal
+        _userEmail = cleanEmail;
+        _isAuthenticated = true;
+
+        // 4. Simpan ke Penyimpanan Lokal (Persistensi)
         if (_token != null) await prefs.setString('auth_token', _token!);
         if (_userEmail != null) await prefs.setString('user_email', _userEmail!);
         if (_currentUser != null) await prefs.setString('current_user', json.encode(_currentUser));
 
-        // Update Header Dio agar request berikutnya membawa token ini
+        // 5. Update Header Dio
         if (_token != null) {
           _dio.options.headers['Authorization'] = 'Bearer $_token';
         }
@@ -124,30 +104,33 @@ class AuthService extends ChangeNotifier {
         print('🔥 Login Error: $e');
         if (e is DioException) {
           print('🔥 Dio Error Response: ${e.response?.data}');
+          print('🔥 Dio Error Status: ${e.response?.statusCode}');
         }
       }
       return false;
     }
   }
 
+  /// Fungsi Logout
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
     
-    // Hapus semua data sesi
+    // Hapus semua data sesi dari HP/Browser
     await prefs.clear();
 
+    // Reset variabel di memori
     _token = null;
     _userEmail = null;
     _currentUser = null;
     _isAuthenticated = false;
     
-    // Hapus header Authorization
+    // Hapus header Authorization agar request selanjutnya ditolak (aman)
     _dio.options.headers.remove('Authorization');
     
     notifyListeners();
   }
 
-  // Getters
+  // Getters & Setters
   bool get isAuthenticated => _isAuthenticated;
   String? get userEmail => _userEmail;
   String? get token => _token;
