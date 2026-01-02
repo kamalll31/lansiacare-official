@@ -53,7 +53,6 @@ class ApiService {
           print('📝 Error Data: ${e.response?.data}');
         }
         
-        // Jika Token expired (401), hapus dari storage
         if (e.response?.statusCode == 401) {
           if (kDebugMode) print('⚠️ Unauthorized - Token Expired');
           final prefs = await SharedPreferences.getInstance();
@@ -88,12 +87,12 @@ class ApiService {
   // SPECIFIC ENDPOINTS
   // =================================================================
 
-  // --- DASHBOARD (Prefix: /api/v1/admin) ---
+  // --- DASHBOARD ---
   Future<Response> getDashboardStats() {
     return get('/api/v1/admin/dashboard/stats'); 
   }
   
-  // --- USERS (Prefix: /api/v1/admin) ---
+  // --- USERS ---
   Future<Response> getUsers({
     int page = 1,
     int perPage = 10,
@@ -114,8 +113,10 @@ class ApiService {
     return get('/api/v1/admin/users/$userId');
   }
   
-  // --- CONTENT ITEMS (PERBAIKAN UTAMA DI SINI) ---
-  // Kita ubah dari 'admin/content' menjadi 'content/admin' agar sesuai backend
+  // --- CONTENT ITEMS (PERBAIKAN KRUSIAL DI SINI) ---
+  
+  // [FIX] URL HARUS: /api/v1/content/admin/items
+  // BUKAN: /api/v1/admin/content/items
   
   Future<Response> getContentItems({ 
     int page = 1,
@@ -139,36 +140,35 @@ class ApiService {
     if (startDate != null && startDate.isNotEmpty) query['start_date'] = startDate;
     if (endDate != null && endDate.isNotEmpty) query['end_date'] = endDate;
     
-    // [FIX] Path diperbaiki
     return get('/api/v1/content/admin/items', queryParameters: query); 
   }
   
-  // [FIX] Path diperbaiki
+  // [FIX] URL: /api/v1/content/admin/analyze-url
   Future<Response> analyzeUrl(String url) {
     return post('/api/v1/content/admin/analyze-url', data: {'url': url});
   }
 
-  // [FIX] Path diperbaiki
+  // [FIX] URL: /api/v1/content/admin/items
   Future<Response> createContent(dynamic data, {Options? options}) {
     return post('/api/v1/content/admin/items', data: data, options: options);
   }
   
-  // [FIX] Path diperbaiki
+  // [FIX] URL: /api/v1/content/admin/items/...
   Future<Response> updateContent(int contentId, dynamic data, {Options? options}) {
     return put('/api/v1/content/admin/items/$contentId', data: data, options: options);
   }
   
-  // [FIX] Path diperbaiki
+  // [FIX] URL: /api/v1/content/admin/items/...
   Future<Response> deleteContent(int contentId) {
     return delete('/api/v1/content/admin/items/$contentId');
   }
-  
-  // [FIX] Path diperbaiki
+
+  // [FIX] URL: /api/v1/content/admin/upload
   Future<Response> uploadMedia(FormData data) {
     return post('/api/v1/content/admin/upload', data: data);
   }
 
-  // --- SYSTEM LOGS & EMERGENCY (Prefix: /api/v1/admin) ---
+  // --- SYSTEM LOGS ---
   Future<Response> getSystemLogs({
     int page = 1,
     int perPage = 50,
@@ -183,7 +183,7 @@ class ApiService {
     return get('/api/v1/admin/emergencies/recent');
   }
   
-  // --- ANALYTICS (Prefix: /api/v1/admin) ---
+  // --- ANALYTICS ---
   Future<Response> getUserEngagement() => get('/api/v1/admin/analytics/user-engagement');
   Future<Response> getContentPerformance() => get('/api/v1/admin/analytics/content-performance');
 }
