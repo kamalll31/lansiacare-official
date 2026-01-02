@@ -18,7 +18,9 @@ def create_app():
     # ==================================================================
     # 1. KONFIGURASI
     # ==================================================================
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///dev.db')
+    # Gunakan path absolut untuk DB agar aman di PythonAnywhere
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///' + os.path.join(basedir, '../instance/dev.db'))
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'dev-secret-change-me')
     app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 86400  # 24 jam
@@ -34,7 +36,7 @@ def create_app():
     migrate.init_app(app, db)
     
     # [SOLUSI NUKLIR] CORS ALLOW ALL (*)
-    # Memastikan Admin Web dan Mobile App bisa akses tanpa blokir
+    # Ini wajib agar Flutter Web (localhost) bisa bicara ke PythonAnywhere
     CORS(app, resources={r"/*": {
         "origins": "*",
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -61,18 +63,17 @@ def create_app():
     app.register_blueprint(activities_bp, url_prefix='/api/v1/activities')
     app.register_blueprint(family_bp, url_prefix='/api/v1/family')
     
-    # Admin System (Dashboard, Logs)
+    # Admin System (Dashboard, Logs) - URL: /api/v1/admin/...
     app.register_blueprint(admin_bp, url_prefix='/api/v1/admin')
     
-    # Content System (Artikel, Video)
-    # URL Akhir: /api/v1/content/admin/... (Admin) 
-    # URL Akhir: /api/v1/content/public/... (Mobile)
+    # Content System (Artikel, Video) - PENTING!
+    # URL Akhir Admin: /api/v1/content/admin/... (Cocok dengan Frontend Baru)
+    # URL Akhir Public: /api/v1/content/public/...
     app.register_blueprint(content_bp, url_prefix='/api/v1/content')
     
     # ==================================================================
     # 4. STATIC FILES (Untuk Akses Hasil Upload)
     # ==================================================================
-    # Memastikan folder upload bisa diakses via URL http://.../static/uploads/file.jpg
     @app.route('/static/uploads/<path:filename>')
     def serve_upload(filename):
         from flask import send_from_directory
