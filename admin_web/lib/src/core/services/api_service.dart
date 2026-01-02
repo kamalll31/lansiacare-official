@@ -1,6 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // [UBAH] Menggunakan SharedPreferences
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:admin_web/src/core/config/app_config.dart';
 
 class ApiService {
@@ -8,9 +8,6 @@ class ApiService {
   factory ApiService() => _instance;
   
   late Dio _dio;
-  
-  // Kita tidak perlu menyimpan instance SharedPreferences di variabel class
-  // karena kita akan memanggil .getInstance() saat butuh saja (async).
   
   ApiService._internal() {
     _dio = Dio(BaseOptions(
@@ -29,7 +26,6 @@ class ApiService {
   void _initInterceptors() {
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        // [FIX] Ambil Token dari SharedPreferences (Lebih stabil di Web)
         final prefs = await SharedPreferences.getInstance();
         final token = prefs.getString('auth_token');
         
@@ -92,12 +88,12 @@ class ApiService {
   // SPECIFIC ENDPOINTS
   // =================================================================
 
-  // --- DASHBOARD ---
+  // --- DASHBOARD (Prefix: /api/v1/admin) ---
   Future<Response> getDashboardStats() {
     return get('/api/v1/admin/dashboard/stats'); 
   }
   
-  // --- USERS ---
+  // --- USERS (Prefix: /api/v1/admin) ---
   Future<Response> getUsers({
     int page = 1,
     int perPage = 10,
@@ -118,7 +114,10 @@ class ApiService {
     return get('/api/v1/admin/users/$userId');
   }
   
-  // --- CONTENT ITEMS ---
+  // --- CONTENT ITEMS (Prefix: /api/v1/content/admin) ---
+  // [FIX] URL diubah dari /api/v1/admin/content menjadi /api/v1/content/admin
+  // Sesuai dengan blueprint content_bp yang di-register di backend
+  
   Future<Response> getContentItems({ 
     int page = 1,
     int perPage = 10,
@@ -141,22 +140,22 @@ class ApiService {
     if (startDate != null && startDate.isNotEmpty) query['start_date'] = startDate;
     if (endDate != null && endDate.isNotEmpty) query['end_date'] = endDate;
     
-    return get('/api/v1/admin/content/items', queryParameters: query); 
+    return get('/api/v1/content/admin/items', queryParameters: query); 
   }
   
   Future<Response> createContent(dynamic data, {Options? options}) {
-    return post('/api/v1/admin/content/items', data: data, options: options);
+    return post('/api/v1/content/admin/items', data: data, options: options);
   }
   
   Future<Response> updateContent(int contentId, dynamic data, {Options? options}) {
-    return put('/api/v1/admin/content/items/$contentId', data: data, options: options);
+    return put('/api/v1/content/admin/items/$contentId', data: data, options: options);
   }
   
   Future<Response> deleteContent(int contentId) {
-    return delete('/api/v1/admin/content/items/$contentId');
+    return delete('/api/v1/content/admin/items/$contentId');
   }
-  
-  // --- SYSTEM LOGS & EMERGENCY ---
+
+  // --- SYSTEM LOGS & EMERGENCY (Prefix: /api/v1/admin) ---
   Future<Response> getSystemLogs({
     int page = 1,
     int perPage = 50,
@@ -171,7 +170,7 @@ class ApiService {
     return get('/api/v1/admin/emergencies/recent');
   }
   
-  // --- ANALYTICS ---
+  // --- ANALYTICS (Prefix: /api/v1/admin) ---
   Future<Response> getUserEngagement() => get('/api/v1/admin/analytics/user-engagement');
   Future<Response> getContentPerformance() => get('/api/v1/admin/analytics/content-performance');
 }

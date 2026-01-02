@@ -17,7 +17,6 @@ class ContentViewModel with ChangeNotifier {
   String? _typeFilter;
   String? _statusFilter;
   String? _searchQuery;
-  // REMOVED: DateTimeRange? _dateRangeFilter; // Sementara dihapus
   
   // ==================== PAGINATION ====================
   int _currentPage = 1;
@@ -53,7 +52,6 @@ class ContentViewModel with ChangeNotifier {
   String? get typeFilter => _typeFilter;
   String? get statusFilter => _statusFilter;
   String? get searchQuery => _searchQuery;
-  // REMOVED: DateTimeRange? get dateRangeFilter => _dateRangeFilter;
   
   int get currentPage => _currentPage;
   int get totalPages => _totalPages;
@@ -109,8 +107,6 @@ class ContentViewModel with ChangeNotifier {
     notifyListeners();
   }
   
-  // REMOVED: setDateRangeFilter method
-  
   void clearFilters() {
     _categoryFilter = null;
     _typeFilter = null;
@@ -149,6 +145,7 @@ class ContentViewModel with ChangeNotifier {
       if (response.statusCode == 200) {
         final data = response.data;
         
+        // Handle format response yang berbeda-beda
         final List<dynamic> items = data['items'] ??
             data['content'] ??
             data['articles'] ??
@@ -165,7 +162,6 @@ class ContentViewModel with ChangeNotifier {
           _contentList.addAll(newItems);
         }
         
-        // Update pagination
         _updatePagination(data);
         
       } else {
@@ -246,13 +242,11 @@ class ContentViewModel with ChangeNotifier {
       final response = await _apiService.updateContent(content.id, content.toJson());
       
       if (response.statusCode == 200) {
-        // Update in list
         final index = _contentList.indexWhere((c) => c.id == content.id);
         if (index != -1) {
           _contentList[index] = content;
         }
         
-        // Update selected content if it's the same
         if (_selectedContent?.id == content.id) {
           _selectedContent = content;
         }
@@ -281,11 +275,9 @@ class ContentViewModel with ChangeNotifier {
       final response = await _apiService.deleteContent(contentId);
       
       if (response.statusCode == 200) {
-        // Remove from list
         _contentList.removeWhere((c) => c.id == contentId);
         _totalItems = _totalItems > 0 ? _totalItems - 1 : 0;
         
-        // Clear selected if it's the deleted one
         if (_selectedContent?.id == contentId) {
           _selectedContent = null;
         }
@@ -305,7 +297,7 @@ class ContentViewModel with ChangeNotifier {
     }
   }
   
-  // ==================== URL ANALYSIS ====================
+  // ==================== URL ANALYSIS (DIPERBAIKI) ====================
   
   Future<Map<String, dynamic>> analyzeUrl(String url) async {
     _isAnalyzingUrl = true;
@@ -320,7 +312,17 @@ class ContentViewModel with ChangeNotifier {
       );
       
       if (response.statusCode == 200) {
-        _urlAnalysis = UrlAnalysis.fromJson(response.data);
+        // [FIX UTAMA]: Mengambil data dari key 'analysis', bukan langsung dari root.
+        // Backend mengirim: { "success": true, "analysis": { ... data ... } }
+        final analysisData = response.data['analysis'];
+        
+        if (analysisData != null) {
+            _urlAnalysis = UrlAnalysis.fromJson(analysisData);
+        } else {
+            // Jaga-jaga jika format backend berubah (fallback)
+            _urlAnalysis = UrlAnalysis.fromJson(response.data);
+        }
+
         return {'success': true, 'analysis': _urlAnalysis};
       } else {
         throw Exception(response.data['error'] ?? 'Gagal menganalisis URL');

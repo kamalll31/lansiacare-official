@@ -12,6 +12,8 @@ import json
 
 content_bp = Blueprint('content', __name__)
 
+# --- HELPER FUNCTIONS ---
+
 # Konfigurasi Upload
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'mp3', 'mp4', 'wav'}
 
@@ -19,8 +21,23 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def parse_iso_datetime(date_str):
+    """
+    Helper untuk menangani format tanggal dari Flutter (ISO 8601 dengan 'Z')
+    Python < 3.11 tidak support 'Z' di fromisoformat
+    """
+    if not date_str:
+        return None
+    try:
+        # Ganti Z dengan +00:00 agar kompatibel
+        if date_str.endswith('Z'):
+            date_str = date_str[:-1] + '+00:00'
+        return datetime.fromisoformat(date_str)
+    except ValueError:
+        return None
+
 # ==============================
-# ENDPOINT BARU: UPLOAD MEDIA
+# ENDPOINT: UPLOAD MEDIA
 # ==============================
 @content_bp.route('/admin/upload', methods=['POST'])
 @jwt_required()
@@ -30,7 +47,7 @@ def upload_media():
         # Cek hak akses admin
         user_id = get_jwt_identity()
         user = User.query.get(user_id)
-        if user.role != 'admin':
+        if not user or user.role != 'admin':
             return jsonify({'success': False, 'error': 'Admin access required'}), 403
 
         if 'file' not in request.files:
@@ -56,15 +73,17 @@ def upload_media():
             file.save(file_path)
             
             # 4. Generate URL Publik
-            # Di Production, pastikan Anda men-serve folder static dengan benar
             file_url = url_for('static', filename=f'uploads/{unique_filename}', _external=True)
             
-            # Mock duration (0) karena perlu library berat untuk cek durasi asli
+            # [FIX] Paksa HTTPS jika di environment production (PythonAnywhere)
+            if 'pythonanywhere' in request.host and file_url.startswith('http:'):
+                file_url = file_url.replace('http:', 'https:')
+            
             return jsonify({
                 'success': True,
                 'url': file_url,
                 'filename': unique_filename,
-                'duration': 0 
+                'duration': 0 # Mock duration
             }), 200
             
         return jsonify({'success': False, 'error': 'File type not allowed'}), 400
@@ -107,7 +126,6 @@ def get_public_content():
         # Format for mobile app
         content_data = []
         for item in content_items:
-            # Simplify for mobile
             mobile_data = {
                 'id': item.id,
                 'title': item.title,
@@ -145,7 +163,7 @@ def get_public_content():
             
             content_data.append(mobile_data)
             
-            # Track view if user is logged in
+            # Track view (Optional - Silent Fail)
             if user_id:
                 try:
                     consumption = ContentConsumption(
@@ -159,7 +177,7 @@ def get_public_content():
                     db.session.add(consumption)
                     db.session.commit()
                 except Exception:
-                    db.session.rollback() # Ignore error to prevent blocking response
+                    db.session.rollback() 
         
         return jsonify({
             'success': True,
@@ -183,24 +201,32 @@ def get_content_detail(content_id):
         if not content.is_published:
             return jsonify({'success': False, 'error': 'Content not available'}), 404
         
-        # Increment view count
-        content.view_count += 1
+        # [FIX] Separate commits to ensure view count is saved even if log fails
+        try:
+            content.view_count += 1
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f'Error incrementing view count: {e}')
         
         # Track consumption
         if user_id:
-            consumption = ContentConsumption(
-                content_id=content_id,
-                user_id=user_id,
-                consumption_type='view',
-                start_time=datetime.utcnow(),
-                device_type=request.user_agent.string,
-                player_used=content.content_type.split('_')[-1]
-            )
-            db.session.add(consumption)
-        
-        db.session.commit()
-        
-        # Get transcript if available
+            try:
+                consumption = ContentConsumption(
+                    content_id=content_id,
+                    user_id=user_id,
+                    consumption_type='view',
+                    start_time=datetime.utcnow(),
+                    device_type=request.user_agent.string,
+                    player_used=content.content_type.split('_')[-1]
+                )
+                db.session.add(consumption)
+                db.session.commit()
+            except Exception as e:
+                db.session.rollback()
+                current_app.logger.error(f'Error logging consumption: {e}')
+
+        # Get transcript
         transcript = None
         if content.has_transcript:
             transcript_obj = ContentTranscript.query.filter_by(
@@ -227,7 +253,6 @@ def get_content_detail(content_id):
         }), 200
         
     except Exception as e:
-        current_app.logger.error(f'Error getting content detail: {e}')
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # ==============================
@@ -241,8 +266,7 @@ def analyze_url():
     try:
         user_id = get_jwt_identity()
         user = User.query.get(user_id)
-        
-        if user.role != 'admin':
+        if not user or user.role != 'admin':
             return jsonify({'success': False, 'error': 'Admin access required'}), 403
         
         data = request.get_json()
@@ -257,50 +281,42 @@ def analyze_url():
         if not analysis['is_valid']:
             return jsonify({
                 'success': False,
-                'error': 'URL tidak valid',
+                'error': 'URL tidak valid atau tidak didukung',
                 'supported_platforms': ContentMetadataService.get_supported_platforms()
             }), 400
         
         return jsonify({
             'success': True,
-            'analysis': analysis # Use key 'analysis' for frontend consistency
+            'analysis': analysis 
         }), 200
         
     except Exception as e:
         current_app.logger.error(f'Error analyzing URL: {e}')
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# ENDPOINT: LIST ALL CONTENT
-@content_bp.route('/admin/items', methods=['GET']) # Changed from /admin to /admin/items for clarity
+# LIST ALL CONTENT
+@content_bp.route('/admin/items', methods=['GET'])
 @jwt_required()
 def get_all_content_admin():
-    """Get all content for admin"""
     try:
         user_id = get_jwt_identity()
         user = User.query.get(user_id)
-        
-        if user.role != 'admin':
+        if not user or user.role != 'admin':
             return jsonify({'success': False, 'error': 'Admin access required'}), 403
         
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
         category = request.args.get('category')
         content_type = request.args.get('type')
-        status = request.args.get('status')  # published, draft
+        status = request.args.get('status')
         search = request.args.get('search')
         
         query = ContentItem.query
         
-        if category:
-            query = query.filter_by(category=category)
-        
-        if content_type:
-            query = query.filter_by(content_type=content_type)
-        
-        if status == 'published':
-            query = query.filter_by(is_published=True)
-        elif status == 'draft':
-            query = query.filter_by(is_published=False)
+        if category: query = query.filter_by(category=category)
+        if content_type: query = query.filter_by(content_type=content_type)
+        if status == 'published': query = query.filter_by(is_published=True)
+        elif status == 'draft': query = query.filter_by(is_published=False)
         
         if search:
             query = query.filter(
@@ -318,7 +334,7 @@ def get_all_content_admin():
         
         return jsonify({
             'success': True,
-            'items': content_data, # Frontend expects 'items'
+            'items': content_data,
             'pagination': {
                 'page': page,
                 'per_page': per_page,
@@ -328,18 +344,17 @@ def get_all_content_admin():
         }), 200
         
     except Exception as e:
-        current_app.logger.error(f'Error getting all content: {e}')
+        current_app.logger.error(f'Error items: {e}')
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# ENDPOINT: SINGLE ITEM DETAIL
+# SINGLE ITEM DETAIL
 @content_bp.route('/admin/items/<int:content_id>', methods=['GET'])
 @jwt_required()
 def get_content_item_admin(content_id):
-    """Get single content item for admin"""
     try:
         user_id = get_jwt_identity()
         user = User.query.get(user_id)
-        if user.role != 'admin':
+        if not user or user.role != 'admin':
             return jsonify({'success': False, 'error': 'Admin access required'}), 403
 
         content = ContentItem.query.get_or_404(content_id)
@@ -350,7 +365,7 @@ def get_content_item_admin(content_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# ENDPOINT: CREATE CONTENT
+# CREATE CONTENT
 @content_bp.route('/admin/items', methods=['POST'])
 @jwt_required()
 def create_content():
@@ -358,52 +373,39 @@ def create_content():
     try:
         user_id = get_jwt_identity()
         user = User.query.get(user_id)
-        
-        if user.role != 'admin':
+        if not user or user.role != 'admin':
             return jsonify({'success': False, 'error': 'Admin access required'}), 403
         
         data = request.get_json()
         
-        # Validation
         if not data.get('title'):
             return jsonify({'success': False, 'error': 'Title is required'}), 400
         
         content_type = data.get('content_type', 'embedded_video')
         
-        # --- Logic "Safety Net" dari kode asli Anda ---
-        # Validate based on content type
+        # --- Safety Net Logic (Analyze if missing) ---
         if content_type.startswith('embedded'):
             if not data.get('embed_url'):
                 return jsonify({'success': False, 'error': 'Embed URL required'}), 400
             
-            # Analyze URL to get metadata (Auto-fill safety net)
-            analysis = ContentMetadataService.analyze_url(data['embed_url'])
-            if not analysis['is_valid']:
-                return jsonify({'success': False, 'error': 'Invalid embed URL'}), 400
-            
-            # Auto-fill from analysis if fields are missing
-            if not data.get('embed_provider'): data['embed_provider'] = analysis['provider']
-            if not data.get('embed_id'): data['embed_id'] = analysis['id']
-            if not data.get('embed_type'): data['embed_type'] = analysis['type']
-            if not data.get('embed_code') and analysis['embed_code']: data['embed_code'] = analysis['embed_code']
-            
-            # Use metadata for title/description/thumbnail if not provided
-            if analysis['metadata']:
-                metadata = analysis['metadata']
-                if not data.get('excerpt') and metadata.get('description'):
-                    data['excerpt'] = metadata['description'][:200] + '...' if len(metadata['description']) > 200 else metadata['description']
-                if not data.get('thumbnail_url') and metadata.get('thumbnail_url'):
-                    data['thumbnail_url'] = metadata['thumbnail_url']
+            # Jika metadata belum lengkap, coba ambil ulang
+            if not data.get('embed_id'):
+                analysis = ContentMetadataService.analyze_url(data['embed_url'])
+                if not analysis['is_valid']:
+                    return jsonify({'success': False, 'error': 'Invalid embed URL'}), 400
+                
+                # Auto-fill
+                data['embed_provider'] = data.get('embed_provider') or analysis['provider']
+                data['embed_id'] = data.get('embed_id') or analysis['id']
+                data['embed_type'] = data.get('embed_type') or analysis['type']
+                data['embed_code'] = data.get('embed_code') or analysis['embed_code']
+                
+                # Fallback for thumbnail/title if empty
+                if analysis['metadata']:
+                    meta = analysis['metadata']
+                    if not data.get('thumbnail_url'): data['thumbnail_url'] = meta.get('thumbnail_url')
         
-        elif content_type in ['uploaded_video', 'uploaded_audio']:
-            if not data.get('media_url'):
-                return jsonify({'success': False, 'error': 'Media URL required for uploaded content'}), 400
-        
-        elif content_type == 'article':
-            if not data.get('content_text'):
-                return jsonify({'success': False, 'error': 'Content text required for article'}), 400
-        
-        # Create content item
+        # Create Item
         content = ContentItem(
             title=data['title'],
             excerpt=data.get('excerpt', ''),
@@ -418,47 +420,47 @@ def create_content():
             has_subtitles=data.get('has_subtitles', False),
             has_transcript=data.get('has_transcript', False),
             has_audio_description=data.get('has_audio_description', False),
-            scheduled_at=datetime.fromisoformat(data['scheduled_at']) if data.get('scheduled_at') else None
+            # [FIX] Safe DateTime Parsing
+            scheduled_at=parse_iso_datetime(data.get('scheduled_at'))
         )
         
-        # Set content-specific fields
-        if content_type.startswith('embedded'):
-            content.embed_url = data['embed_url']
+        # Mapping Fields
+        if 'embedded' in content_type:
+            content.embed_url = data.get('embed_url')
             content.embed_provider = data.get('embed_provider')
             content.embed_id = data.get('embed_id')
             content.embed_type = data.get('embed_type')
             content.embed_code = data.get('embed_code')
             content.thumbnail_url = data.get('thumbnail_url')
             
-            # YouTube has auto-captions
             if content.embed_provider == 'youtube':
                 content.has_subtitles = True
                 content.accessibility_score = 30
-        
-        elif content_type.startswith('uploaded'):
-            content.media_url = data['media_url']
+                
+        elif 'uploaded' in content_type:
+            content.media_url = data.get('media_url')
             content.thumbnail_url = data.get('thumbnail_url')
             
-            # Calculate accessibility score
+            # Accessibility Score Calc
             score = 0
             if content.has_subtitles: score += 30
             if content.has_transcript: score += 30
             if content.has_audio_description: score += 20
             if content.is_audio_only: score += 20
             content.accessibility_score = min(score, 100)
-        
+            
         elif content_type == 'article':
-            content.content_text = data['content_text']
-            content.has_transcript = True  # Article is already text
+            content.content_text = data.get('content_text')
+            content.has_transcript = True
             content.accessibility_score = 50
         
         if content.is_published and not content.published_at:
             content.published_at = datetime.utcnow()
-        
+            
         db.session.add(content)
         db.session.commit()
         
-        # Add transcript if provided
+        # Add Transcript
         if data.get('transcript'):
             transcript = ContentTranscript(
                 content_id=content.id,
@@ -467,18 +469,16 @@ def create_content():
             )
             db.session.add(transcript)
             db.session.commit()
-        
-        current_app.logger.info(f'Content created: {content.id} by user {user_id}')
-        
+            
         return jsonify({
             'success': True,
-            'message': 'Content created successfully',
+            'message': 'Content created',
             'content': content.to_dict()
         }), 201
         
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f'Error creating content: {e}')
+        current_app.logger.error(f'Create error: {e}')
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @content_bp.route('/admin/items/<int:content_id>', methods=['PUT'])
@@ -488,14 +488,13 @@ def update_content(content_id):
     try:
         user_id = get_jwt_identity()
         user = User.query.get(user_id)
-        
-        if user.role != 'admin':
+        if not user or user.role != 'admin':
             return jsonify({'success': False, 'error': 'Admin access required'}), 403
         
         content = ContentItem.query.get_or_404(content_id)
         data = request.get_json()
         
-        # Update fields
+        # Update fields (Loop Optimized)
         update_fields = [
             'title', 'excerpt', 'content_type', 'category', 'duration',
             'is_published', 'is_featured', 'is_pinned', 'is_audio_only',
@@ -508,7 +507,6 @@ def update_content(content_id):
             if field in data:
                 setattr(content, field, data[field])
         
-        # Handle publishing
         if 'is_published' in data:
             if data['is_published'] and not content.published_at:
                 content.published_at = datetime.utcnow()
@@ -517,34 +515,22 @@ def update_content(content_id):
         
         content.updated_at = datetime.utcnow()
         
-        # Update transcript
+        # Transcript Update
         if 'transcript' in data:
-            transcript = ContentTranscript.query.filter_by(
-                content_id=content_id,
-                transcript_type='full_transcript'
-            ).first()
-            
-            if transcript:
-                transcript.content = data['transcript']
-            elif data['transcript']:
-                new_transcript = ContentTranscript(
+            ContentTranscript.query.filter_by(content_id=content_id).delete()
+            if data['transcript']:
+                new_t = ContentTranscript(
                     content_id=content_id,
                     content=data['transcript'],
                     transcript_type='full_transcript'
                 )
-                db.session.add(new_transcript)
+                db.session.add(new_t)
         
         db.session.commit()
-        
-        return jsonify({
-            'success': True,
-            'message': 'Content updated successfully',
-            'content': content.to_dict()
-        }), 200
+        return jsonify({'success': True, 'content': content.to_dict()}), 200
         
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f'Error updating content: {e}')
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @content_bp.route('/admin/items/<int:content_id>', methods=['DELETE'])
@@ -584,8 +570,7 @@ def get_content_stats():
     try:
         user_id = get_jwt_identity()
         user = User.query.get(user_id)
-        
-        if user.role != 'admin':
+        if not user or user.role != 'admin':
             return jsonify({'success': False, 'error': 'Admin access required'}), 403
         
         # Basic stats
@@ -628,35 +613,15 @@ def get_content_stats():
                 'uploaded': uploaded,
                 'articles': articles,
             },
-            'categories': {
-                category: count for category, count in category_stats
-            },
-            'most_viewed': [
-                {
-                    'id': item.id,
-                    'title': item.title,
-                    'type': item.content_type,
-                    'views': item.view_count
-                }
-                for item in most_viewed
-            ],
-            'weekly_stats': [
-                {
-                    'date': str(date),
-                    'views': views,
-                    'type': content_type
-                }
-                for date, views, content_type in weekly_stats
-            ]
+            'categories': {category: count for category, count in category_stats},
+            'most_viewed': [{'id': i.id, 'title': i.title, 'type': i.content_type, 'views': i.view_count} for i in most_viewed],
+            'weekly_stats': [{'date': str(d), 'views': v, 'type': t} for d, v, t in weekly_stats]
         }
         
-        return jsonify({
-            'success': True,
-            'stats': stats
-        }), 200
+        return jsonify({'success': True, 'stats': stats}), 200
         
     except Exception as e:
-        current_app.logger.error(f'Error getting stats: {e}')
+        current_app.logger.error(f'Stats error: {e}')
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @content_bp.route('/admin/supported-platforms', methods=['GET'])

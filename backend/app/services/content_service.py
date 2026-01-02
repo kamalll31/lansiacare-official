@@ -2,14 +2,15 @@ import re
 import requests
 import logging
 from typing import Optional, Dict, Tuple, Any
+from urllib.parse import urlparse, parse_qs
 
 # Konfigurasi Logging
 logger = logging.getLogger(__name__)
 
 class ContentMetadataService:
     """
-    Service metadata yang dioptimalkan dengan Regex Robust.
-    Fokus: Kecepatan dan Ketepatan Ekstraksi ID.
+    Service metadata yang dioptimalkan dengan Hybrid Parsing (URLParse + Regex).
+    Fokus: Kecepatan, Ketepatan, dan Toleransi terhadap format URL yang berantakan.
     """
     
     YOUTUBE_OEMBED_URL = "https://www.youtube.com/oembed"
@@ -19,34 +20,52 @@ class ContentMetadataService:
     @staticmethod
     def extract_youtube_video_id(url: str) -> Optional[str]:
         """
-        Extract YouTube Video ID dengan Regex Master.
-        Menangani:
-        - https://www.youtube.com/watch?v=ID
-        - youtube.com/watch?v=ID (tanpa https)
-        - youtu.be/ID
-        - youtube.com/embed/ID
-        - youtube.com/shorts/ID
+        Extract YouTube Video ID dengan strategi Hybrid (Parse -> Regex).
+        Menangani semua format standar dan short link.
         """
         if not url:
             return None
 
         url = url.strip()
         
-        # --- MASTER REGEX YOUTUBE ---
-        # Penjelasan:
-        # 1. (?:v=|\/|embed\/|shorts\/) -> Cari penanda sebelum ID (v=, /, embed/, shorts/)
-        # 2. ([0-9A-Za-z_-]{11})         -> TANGKAP persis 11 karakter (Huruf, Angka, Underscore, Strip)
-        # 3. (?:[^\w-]|$|&|\?)           -> Pastikan setelah ID adalah batas kata, akhir string, atau parameter lain
-        
-        patterns = [
-            r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',
-            r'(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|shorts\/|watch\?v=|watch\?.+&v=))([0-9A-Za-z_-]{11})',
-        ]
+        # 1. Normalisasi URL (tambahkan https jika tidak ada)
+        # Ini penting agar urlparse bekerja dengan benar pada input 'www.youtube.com...'
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
 
+        try:
+            # 2. Coba Parsing Standar (Paling Aman untuk parameter v=...)
+            parsed = urlparse(url)
+            hostname = parsed.hostname.lower() if parsed.hostname else ""
+
+            # Case A: youtube.com (Standard)
+            if 'youtube.com' in hostname:
+                query = parse_qs(parsed.query)
+                if 'v' in query:
+                    return query['v'][0]
+                
+                # Handle path based IDs (embed/v/shorts)
+                path_parts = parsed.path.strip('/').split('/')
+                if len(path_parts) >= 2 and path_parts[0] in ['embed', 'v', 'shorts']:
+                    return path_parts[1]
+
+            # Case B: youtu.be (Shortened)
+            if 'youtu.be' in hostname:
+                return parsed.path.strip('/')
+                
+        except Exception as e:
+            logger.warning(f"URLParse failed, switching to Regex fallback: {e}")
+
+        # 3. Fallback Regex Master (Jaring Pengaman Terakhir)
+        # Menangkap pola 11 karakter ID di berbagai posisi umum
+        patterns = [
+            r'(?:v=|/)([0-9A-Za-z_-]{11})(?:[?&/]|$)',  # Menangkap setelah v= atau /
+            r'(?:youtu\.be/|embed/|shorts/)([0-9A-Za-z_-]{11})', # Format path khusus
+        ]
+        
         for pattern in patterns:
             match = re.search(pattern, url, re.IGNORECASE)
             if match:
-                # Ambil ID dan pastikan bersih
                 return match.group(1)
                 
         return None
@@ -54,8 +73,8 @@ class ContentMetadataService:
     @staticmethod
     def extract_spotify_id(url: str) -> Optional[Tuple[str, str]]:
         """Extract Spotify type dan ID"""
-        # Support format: open.spotify.com/type/id atau spoti.fi/id
-        pattern = r'(?:open\.spotify\.com|spoti\.fi)\/(track|episode|playlist|album|show)\/([a-zA-Z0-9]+)'
+        # Support format: open.spotify.com/type/id atau spoti.fi/id (resolved)
+        pattern = r'(?:open\.spotify\.com|spoti\.fi)/(track|episode|playlist|album|show)/([a-zA-Z0-9]+)'
         match = re.search(pattern, url, re.IGNORECASE)
         if match:
             return match.group(1), match.group(2)
@@ -64,7 +83,7 @@ class ContentMetadataService:
     @staticmethod
     def extract_vimeo_id(url: str) -> Optional[str]:
         """Extract Vimeo Video ID."""
-        pattern = r'(?:vimeo\.com|player\.vimeo\.com\/video)\/([0-9]+)'
+        pattern = r'(?:vimeo\.com|player\.vimeo\.com/video)/([0-9]+)'
         match = re.search(pattern, url, re.IGNORECASE)
         if match:
             return match.group(1)
@@ -107,7 +126,7 @@ class ContentMetadataService:
             return result
 
         # --- 1. YOUTUBE ---
-        # Cek domain youtube/youtu.be
+        # Cek domain youtube/youtu.be (case insensitive)
         if 'youtu' in url.lower():
             yt_id = ContentMetadataService.extract_youtube_video_id(url)
             
@@ -120,7 +139,7 @@ class ContentMetadataService:
                 result['content_type'] = 'embedded_video'
                 result['recommended_categories'] = ['senam_lansia', 'kesehatan_praktis', 'tutorial_aplikasi']
                 
-                # Fetch Metadata
+                # Fetch Metadata via oEmbed
                 meta = ContentMetadataService.fetch_oembed_data(
                     ContentMetadataService.YOUTUBE_OEMBED_URL, 
                     f"https://www.youtube.com/watch?v={yt_id}"
@@ -133,7 +152,7 @@ class ContentMetadataService:
                     'provider_name': 'YouTube'
                 }
                 
-                # Custom Embed Code
+                # Custom Embed Code (Optimasi untuk Lansia: controls besar, no autoplay)
                 result['embed_code'] = f'''
                 <iframe 
                     width="100%" 
@@ -146,7 +165,6 @@ class ContentMetadataService:
                 '''
                 return result
             else:
-                # Jika domain youtube tapi ID tidak ketemu
                 logger.error(f"Failed to extract ID from YouTube URL: {url}")
 
         # --- 2. SPOTIFY ---
@@ -181,6 +199,7 @@ class ContentMetadataService:
                     'provider_name': 'Spotify'
                 }
 
+                # Embed Code Standard Spotify
                 result['embed_code'] = f'''
                 <iframe 
                     style="border-radius:12px" 
@@ -236,7 +255,7 @@ class ContentMetadataService:
                 return result
 
         # --- 4. UNSUPPORTED ---
-        result['error'] = "URL tidak valid atau platform tidak didukung"
+        result['error'] = "Platform tidak didukung atau format URL salah"
         return result
 
     @staticmethod
