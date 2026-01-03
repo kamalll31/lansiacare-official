@@ -17,6 +17,8 @@ class ContentViewModel with ChangeNotifier {
   String? _typeFilter;
   String? _statusFilter;
   String? _searchQuery;
+  String? _startDateFilter;
+  String? _endDateFilter;
   
   // ==================== PAGINATION ====================
   int _currentPage = 1;
@@ -31,6 +33,8 @@ class ContentViewModel with ChangeNotifier {
   bool _isUploading = false;
   bool _isAnalyzingUrl = false;
   bool _isDeleting = false;
+  bool _isCreating = false;
+  bool _isUpdating = false;
   
   // ==================== ERRORS & MESSAGES ====================
   String? _error;
@@ -38,6 +42,8 @@ class ContentViewModel with ChangeNotifier {
   String? _uploadError;
   String? _urlAnalysisError;
   String? _deleteError;
+  String? _createError;
+  String? _updateError;
   String? _successMessage;
   
   // ==================== URL ANALYSIS ====================
@@ -52,6 +58,8 @@ class ContentViewModel with ChangeNotifier {
   String? get typeFilter => _typeFilter;
   String? get statusFilter => _statusFilter;
   String? get searchQuery => _searchQuery;
+  String? get startDateFilter => _startDateFilter;
+  String? get endDateFilter => _endDateFilter;
   
   int get currentPage => _currentPage;
   int get totalPages => _totalPages;
@@ -66,12 +74,16 @@ class ContentViewModel with ChangeNotifier {
   bool get isUploading => _isUploading;
   bool get isAnalyzingUrl => _isAnalyzingUrl;
   bool get isDeleting => _isDeleting;
+  bool get isCreating => _isCreating;
+  bool get isUpdating => _isUpdating;
   
   String? get error => _error;
   String? get detailError => _detailError;
   String? get uploadError => _uploadError;
   String? get urlAnalysisError => _urlAnalysisError;
   String? get deleteError => _deleteError;
+  String? get createError => _createError;
+  String? get updateError => _updateError;
   String? get successMessage => _successMessage;
   
   UrlAnalysis? get urlAnalysis => _urlAnalysis;
@@ -79,7 +91,9 @@ class ContentViewModel with ChangeNotifier {
   bool get hasActiveFilters => _categoryFilter != null ||
       _typeFilter != null ||
       _statusFilter != null ||
-      (_searchQuery?.isNotEmpty ?? false);
+      (_searchQuery?.isNotEmpty ?? false) ||
+      _startDateFilter != null ||
+      _endDateFilter != null;
   
   // ==================== FILTER MANAGEMENT ====================
   
@@ -107,11 +121,20 @@ class ContentViewModel with ChangeNotifier {
     notifyListeners();
   }
   
+  void setDateFilters(String? startDate, String? endDate) {
+    _startDateFilter = startDate;
+    _endDateFilter = endDate;
+    _resetPagination();
+    notifyListeners();
+  }
+  
   void clearFilters() {
     _categoryFilter = null;
     _typeFilter = null;
     _statusFilter = null;
     _searchQuery = null;
+    _startDateFilter = null;
+    _endDateFilter = null;
     _resetPagination();
     notifyListeners();
   }
@@ -140,12 +163,19 @@ class ContentViewModel with ChangeNotifier {
         category: _categoryFilter,
         status: _statusFilter,
         search: _searchQuery,
+        startDate: _startDateFilter,
+        endDate: _endDateFilter,
       );
       
       if (response.statusCode == 200) {
         final data = response.data;
         
-        // Handle format response yang berbeda-beda
+        // Debug logging
+        if (kDebugMode) {
+          print('📦 Fetch Content Response Keys: ${data.keys.toList()}');
+        }
+        
+        // Handle different response formats
         final List<dynamic> items = data['items'] ??
             data['content'] ??
             data['articles'] ??
@@ -153,6 +183,7 @@ class ContentViewModel with ChangeNotifier {
             [];
         
         final List<ContentItem> newItems = items
+            .where((json) => json != null)
             .map((json) => ContentItem.fromJson(json))
             .toList();
         
@@ -164,12 +195,17 @@ class ContentViewModel with ChangeNotifier {
         
         _updatePagination(data);
         
+        if (kDebugMode) {
+          print('✅ Content loaded: ${newItems.length} items');
+          print('📊 Pagination: page $_currentPage/$_totalPages, total $_totalItems');
+        }
+        
       } else {
-        final errorMsg = response.data['error'] ?? 'Gagal memuat konten';
+        final errorMsg = _extractErrorMessageFromResponse(response.data);
         throw Exception(errorMsg);
       }
     } on DioException catch (e) {
-      _error = 'Terjadi kesalahan jaringan: ${e.message}';
+      _error = _extractErrorMessage(e, 'Gagal memuat konten');
     } catch (e) {
       _error = 'Terjadi kesalahan: ${e.toString()}';
     } finally {
@@ -184,16 +220,30 @@ class ContentViewModel with ChangeNotifier {
     notifyListeners();
     
     try {
-      final response = await _apiService.get('/api/v1/admin/content/items/$contentId');
+      // [FIXED] URL yang benar sesuai dengan ApiService
+      final response = await _apiService.get('/api/v1/content/admin/items/$contentId');
       
       if (response.statusCode == 200) {
         final data = response.data['content'] ?? response.data;
-        _selectedContent = ContentItem.fromJson(data);
+        if (data != null) {
+          _selectedContent = ContentItem.fromJson(data);
+          
+          if (kDebugMode) {
+            print('✅ Content detail loaded: ${_selectedContent?.title}');
+          }
+        } else {
+          throw Exception('Data konten tidak ditemukan');
+        }
       } else {
-        throw Exception('Gagal memuat detail konten');
+        throw Exception(_extractErrorMessageFromResponse(response.data));
       }
     } on DioException catch (e) {
-      _detailError = 'Gagal memuat detail: ${e.message}';
+      _detailError = _extractErrorMessage(e, 'Gagal memuat detail');
+      
+      // Special handling for 404
+      if (e.response?.statusCode == 404) {
+        _detailError = 'Konten tidak ditemukan (ID: $contentId)';
+      }
     } catch (e) {
       _detailError = 'Terjadi kesalahan: ${e.toString()}';
     } finally {
@@ -209,8 +259,9 @@ class ContentViewModel with ChangeNotifier {
   }
   
   Future<bool> createContent(ContentItem content) async {
-    _isLoading = true;
-    _error = null;
+    _isCreating = true;
+    _createError = null;
+    _successMessage = null;
     notifyListeners();
     
     try {
@@ -218,24 +269,34 @@ class ContentViewModel with ChangeNotifier {
       
       if (response.statusCode == 201 || response.statusCode == 200) {
         _successMessage = 'Konten berhasil dibuat';
-        await fetchContent(refresh: true);
+        
+        // Add the new content to the list
+        if (response.data['content'] != null) {
+          final newContent = ContentItem.fromJson(response.data['content']);
+          _contentList.insert(0, newContent);
+        }
+        
         await fetchContentStats();
         return true;
       } else {
-        throw Exception(response.data['error'] ?? 'Gagal membuat konten');
+        throw Exception(_extractErrorMessageFromResponse(response.data));
       }
+    } on DioException catch (e) {
+      _createError = _extractErrorMessage(e, 'Gagal membuat konten');
+      return false;
     } catch (e) {
-      _error = e.toString();
+      _createError = 'Terjadi kesalahan: ${e.toString()}';
       return false;
     } finally {
-      _isLoading = false;
+      _isCreating = false;
       notifyListeners();
     }
   }
   
   Future<bool> updateContent(ContentItem content) async {
-    _isLoading = true;
-    _error = null;
+    _isUpdating = true;
+    _updateError = null;
+    _successMessage = null;
     notifyListeners();
     
     try {
@@ -255,13 +316,16 @@ class ContentViewModel with ChangeNotifier {
         await fetchContentStats();
         return true;
       } else {
-        throw Exception(response.data['error'] ?? 'Gagal memperbarui konten');
+        throw Exception(_extractErrorMessageFromResponse(response.data));
       }
+    } on DioException catch (e) {
+      _updateError = _extractErrorMessage(e, 'Gagal memperbarui konten');
+      return false;
     } catch (e) {
-      _error = e.toString();
+      _updateError = 'Terjadi kesalahan: ${e.toString()}';
       return false;
     } finally {
-      _isLoading = false;
+      _isUpdating = false;
       notifyListeners();
     }
   }
@@ -269,6 +333,7 @@ class ContentViewModel with ChangeNotifier {
   Future<bool> deleteContent(int contentId) async {
     _isDeleting = true;
     _deleteError = null;
+    _successMessage = null;
     notifyListeners();
     
     try {
@@ -286,10 +351,13 @@ class ContentViewModel with ChangeNotifier {
         await fetchContentStats();
         return true;
       } else {
-        throw Exception(response.data['error'] ?? 'Gagal menghapus konten');
+        throw Exception(_extractErrorMessageFromResponse(response.data));
       }
+    } on DioException catch (e) {
+      _deleteError = _extractErrorMessage(e, 'Gagal menghapus konten');
+      return false;
     } catch (e) {
-      _deleteError = e.toString();
+      _deleteError = 'Terjadi kesalahan: ${e.toString()}';
       return false;
     } finally {
       _isDeleting = false;
@@ -297,7 +365,7 @@ class ContentViewModel with ChangeNotifier {
     }
   }
   
-  // ==================== URL ANALYSIS (DIPERBAIKI) ====================
+  // ==================== URL ANALYSIS (FINAL FIX) ====================
   
   Future<Map<String, dynamic>> analyzeUrl(String url) async {
     _isAnalyzingUrl = true;
@@ -306,33 +374,102 @@ class ContentViewModel with ChangeNotifier {
     notifyListeners();
     
     try {
-      final response = await _apiService.post(
-        '/api/v1/admin/content/analyze-url', 
-        data: {'url': url},
-      );
+      // [CRITICAL FIX] Validasi URL sebelum dikirim
+      if (url.isEmpty) {
+        throw Exception('URL tidak boleh kosong');
+      }
+      
+      if (!url.startsWith('http')) {
+        throw Exception('URL harus diawali dengan http:// atau https://');
+      }
+      
+      final response = await _apiService.analyzeUrl(url);
       
       if (response.statusCode == 200) {
-        // [FIX UTAMA]: Mengambil data dari key 'analysis', bukan langsung dari root.
-        // Backend mengirim: { "success": true, "analysis": { ... data ... } }
-        final analysisData = response.data['analysis'];
+        final data = response.data;
         
-        if (analysisData != null) {
-            _urlAnalysis = UrlAnalysis.fromJson(analysisData);
-        } else {
-            // Jaga-jaga jika format backend berubah (fallback)
-            _urlAnalysis = UrlAnalysis.fromJson(response.data);
+        if (kDebugMode) {
+          print('📦 URL Analysis Response: ${data.keys.toList()}');
         }
-
-        return {'success': true, 'analysis': _urlAnalysis};
+        
+        // Handle multiple possible response formats
+        Map<String, dynamic>? analysisData;
+        
+        if (data['success'] == true && data['analysis'] != null) {
+          // Format: { "success": true, "analysis": { ... } }
+          analysisData = data['analysis'];
+        } else if (data['analysis'] != null) {
+          // Format: { "analysis": { ... } }
+          analysisData = data['analysis'];
+        } else if (data['url'] != null || data['title'] != null) {
+          // Format: { "url": "...", "title": "...", ... }
+          analysisData = data;
+        } else if (data['data'] != null) {
+          // Format: { "data": { ... } }
+          analysisData = data['data'];
+        } else {
+          // Fallback: use entire response
+          analysisData = data;
+        }
+        
+        if (analysisData != null && analysisData.isNotEmpty) {
+          _urlAnalysis = UrlAnalysis.fromJson(analysisData);
+          
+          return {
+            'success': true, 
+            'analysis': _urlAnalysis,
+            'message': 'URL berhasil dianalisis'
+          };
+        } else {
+          throw Exception('Format response tidak dikenali');
+        }
       } else {
-        throw Exception(response.data['error'] ?? 'Gagal menganalisis URL');
+        throw Exception(_extractErrorMessageFromResponse(response.data));
       }
+    } on DioException catch (e) {
+      _urlAnalysisError = _extractUrlAnalysisErrorMessage(e);
+      
+      // Detailed debug logging
+      if (kDebugMode) {
+        print('❌ DioError saat analisis URL:');
+        print('   Type: ${e.type}');
+        print('   Message: ${e.message}');
+        print('   Status: ${e.response?.statusCode}');
+        print('   URL: ${e.requestOptions.uri}');
+        print('   Response: ${e.response?.data}');
+      }
+      
+      return {
+        'success': false, 
+        'error': _urlAnalysisError,
+        'statusCode': e.response?.statusCode,
+        'requestUrl': e.requestOptions.uri.toString()
+      };
     } catch (e) {
-      _urlAnalysisError = e.toString();
-      return {'success': false, 'error': e.toString()};
+      _urlAnalysisError = 'Terjadi kesalahan: ${e.toString()}';
+      return {'success': false, 'error': _urlAnalysisError};
     } finally {
       _isAnalyzingUrl = false;
       notifyListeners();
+    }
+  }
+  
+  String _extractUrlAnalysisErrorMessage(DioException e) {
+    // Special handling for URL analysis errors
+    switch (e.response?.statusCode) {
+      case 404:
+        return 'Endpoint analisis URL tidak ditemukan. '
+               'Pastikan backend berjalan di: ${e.requestOptions.baseUrl}';
+      case 500:
+        return 'Server error saat menganalisis URL. Silakan coba lagi.';
+      case 400:
+        return 'URL tidak valid atau tidak didukung.';
+      default:
+        if (e.type == DioExceptionType.connectionError) {
+          return 'Tidak dapat terhubung ke server. '
+                 'Periksa koneksi internet dan konfigurasi CORS.';
+        }
+        return _extractErrorMessage(e, 'Gagal menganalisis URL');
     }
   }
   
@@ -350,13 +487,20 @@ class ContentViewModel with ChangeNotifier {
     notifyListeners();
     
     try {
+      // Validate file
+      if (kIsWeb) {
+        if (pickedFile.bytes == null || pickedFile.bytes!.isEmpty) {
+          throw Exception("File kosong. Pilih file yang valid.");
+        }
+      } else {
+        if (pickedFile.path == null || pickedFile.path!.isEmpty) {
+          throw Exception("File path tidak valid.");
+        }
+      }
+      
       FormData formData;
 
       if (kIsWeb) {
-        if (pickedFile.bytes == null) {
-          throw Exception("File bytes kosong. Gagal membaca file di Web.");
-        }
-        
         formData = FormData.fromMap({
           'file': MultipartFile.fromBytes(
             pickedFile.bytes!,
@@ -365,10 +509,6 @@ class ContentViewModel with ChangeNotifier {
           'type': type,
         });
       } else {
-        if (pickedFile.path == null) {
-          throw Exception("File path tidak ditemukan.");
-        }
-        
         formData = FormData.fromMap({
           'file': await MultipartFile.fromFile(
             pickedFile.path!,
@@ -378,23 +518,24 @@ class ContentViewModel with ChangeNotifier {
         });
       }
       
-      final response = await _apiService.post(
-        '/api/v1/admin/content/upload',
-        data: formData,
-        options: Options(headers: {'Content-Type': 'multipart/form-data'}),
-      );
+      final response = await _apiService.uploadMedia(formData);
       
       if (response.statusCode == 200) {
         return {
           'success': true,
           'url': response.data['url'],
           'duration': response.data['duration'],
+          'thumbnail': response.data['thumbnail'],
+          'message': 'File berhasil diupload',
         };
       }
-      throw Exception(response.data['error'] ?? 'Upload failed');
+      throw Exception(_extractErrorMessageFromResponse(response.data));
+    } on DioException catch (e) {
+      _uploadError = _extractErrorMessage(e, 'Upload gagal');
+      return {'success': false, 'error': _uploadError};
     } catch (e) {
-      _uploadError = e.toString();
-      return {'success': false, 'error': e.toString()};
+      _uploadError = 'Terjadi kesalahan: ${e.toString()}';
+      return {'success': false, 'error': _uploadError};
     } finally {
       _isUploading = false;
       notifyListeners();
@@ -408,7 +549,8 @@ class ContentViewModel with ChangeNotifier {
     notifyListeners();
     
     try {
-      final response = await _apiService.get('/api/v1/admin/content/stats');
+      // [FIXED] URL yang benar
+      final response = await _apiService.get('/api/v1/content/admin/stats');
       
       if (response.statusCode == 200) {
         final data = response.data;
@@ -418,9 +560,22 @@ class ContentViewModel with ChangeNotifier {
         } else {
           _stats = ContentStats.fromJson(data);
         }
+        
+        if (kDebugMode) {
+          print('✅ Stats loaded successfully');
+        }
+      } else {
+        if (kDebugMode) {
+          print('⚠️ Stats response: ${response.statusCode}');
+        }
+      }
+    } on DioException catch (e) {
+      if (kDebugMode) {
+        print('❌ DioError fetching stats: ${e.message}');
+        print('   URL: ${e.requestOptions.uri}');
       }
     } catch (e) {
-      if (kDebugMode) print('❌ Error fetching content stats: $e');
+      if (kDebugMode) print('❌ Error fetching stats: $e');
     } finally {
       _isLoadingStats = false;
       notifyListeners();
@@ -463,8 +618,53 @@ class ContentViewModel with ChangeNotifier {
     _uploadError = null;
     _urlAnalysisError = null;
     _deleteError = null;
+    _createError = null;
+    _updateError = null;
     _successMessage = null;
     notifyListeners();
+  }
+  
+  // Helper untuk mengekstrak pesan error dari DioException
+  String _extractErrorMessage(DioException e, [String defaultMessage = 'Terjadi kesalahan']) {
+    final statusCode = e.response?.statusCode;
+    
+    // Specific error messages based on status code
+    switch (statusCode) {
+      case 400:
+        return 'Permintaan tidak valid. Periksa data yang dikirim.';
+      case 401:
+        return 'Sesi telah berakhir. Silakan login kembali.';
+      case 403:
+        return 'Anda tidak memiliki izin untuk aksi ini.';
+      case 404:
+        return 'Endpoint tidak ditemukan. Periksa konfigurasi URL.';
+      case 500:
+        return 'Server error. Silakan coba lagi nanti.';
+      case 502:
+      case 503:
+      case 504:
+        return 'Server sedang sibuk. Silakan coba lagi nanti.';
+      default:
+        return _extractErrorMessageFromResponse(e.response?.data) ?? 
+               '$defaultMessage: ${e.message}';
+    }
+  }
+  
+  // Helper untuk mengekstrak pesan error dari response body
+  String? _extractErrorMessageFromResponse(dynamic responseData) {
+    if (responseData == null) return null;
+    
+    if (responseData is Map) {
+      return responseData['error'] ?? 
+             responseData['message'] ?? 
+             responseData['detail'] ??
+             (responseData['errors'] is Map ? 
+              (responseData['errors'] as Map).values.first?.toString() : null);
+    } else if (responseData is String) {
+      return responseData;
+    }
+    
+    return null;
   }
   
   void _updatePagination(Map<String, dynamic> data) {
@@ -476,6 +676,56 @@ class ContentViewModel with ChangeNotifier {
     
     if (_totalPages == 1 && _contentList.length < _perPage) {
       _totalItems = _contentList.length;
+    }
+  }
+  
+  // ==================== DEBUG & TEST METHODS ====================
+  
+  Future<Map<String, dynamic>> testApiConnection() async {
+    try {
+      // Test basic connectivity
+      final response = await _apiService.get('/api/v1/health');
+      
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'message': 'Koneksi API berhasil',
+          'data': response.data
+        };
+      } else {
+        return {
+          'success': false,
+          'message': 'API merespons dengan status: ${response.statusCode}'
+        };
+      }
+    } on DioException catch (e) {
+      return {
+        'success': false,
+        'message': 'Gagal terhubung ke API',
+        'error': e.message,
+        'url': e.requestOptions.uri.toString()
+      };
+    } catch (e) {
+      return {
+        'success': false,
+        'message': 'Error: ${e.toString()}'
+      };
+    }
+  }
+  
+  void printCurrentState() {
+    if (kDebugMode) {
+      print('🔍 ContentViewModel State:');
+      print('   Content Count: ${_contentList.length}');
+      print('   Selected: ${_selectedContent?.title ?? "None"}');
+      print('   Page: $_currentPage/$_totalPages ($_totalItems total)');
+      print('   Filters: ${hasActiveFilters ? "Active" : "None"}');
+      print('   Loading States: ${{
+        'fetching': _isLoading,
+        'detail': _isLoadingDetail,
+        'stats': _isLoadingStats,
+        'analyzing': _isAnalyzingUrl,
+      }}');
     }
   }
 }

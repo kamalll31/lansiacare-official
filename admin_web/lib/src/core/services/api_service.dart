@@ -12,8 +12,8 @@ class ApiService {
   ApiService._internal() {
     _dio = Dio(BaseOptions(
       baseUrl: AppConfig.apiBaseUrl, 
-      connectTimeout: AppConfig.connectionTimeout,
-      receiveTimeout: AppConfig.apiTimeout,
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 30),
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -34,7 +34,10 @@ class ApiService {
         }
         
         if (kDebugMode) {
-          print('🚀 [${options.method}] URL: ${options.uri}');
+          print('🚀 [${options.method}] ${options.uri}');
+          if (options.data != null) {
+            print('📤 Data: ${options.data}');
+          }
         }
         
         return handler.next(options);
@@ -42,21 +45,30 @@ class ApiService {
       
       onResponse: (response, handler) {
         if (kDebugMode) {
-          print('✅ [${response.statusCode}] Success: ${response.requestOptions.uri}');
+          print('✅ [${response.statusCode}] ${response.requestOptions.uri}');
+          print('📦 Response Type: ${response.data.runtimeType}');
         }
         return handler.next(response);
       },
       
       onError: (DioException e, handler) async {
         if (kDebugMode) {
-          print('❌ [${e.response?.statusCode}] Failed: ${e.requestOptions.uri}');
-          print('📝 Error Data: ${e.response?.data}');
+          print('❌ [${e.response?.statusCode}] ${e.requestOptions.method} ${e.requestOptions.uri}');
+          print('📝 Error Type: ${e.type}');
+          print('📝 Error Message: ${e.message}');
+          
+          if (e.response != null) {
+            print('📝 Response Data: ${e.response?.data}');
+            print('📝 Response Headers: ${e.response?.headers}');
+          }
         }
         
         if (e.response?.statusCode == 401) {
           if (kDebugMode) print('⚠️ Unauthorized - Token Expired');
           final prefs = await SharedPreferences.getInstance();
           await prefs.remove('auth_token');
+          
+          // You might want to trigger a logout event here
         }
         
         return handler.next(e);
@@ -65,58 +77,74 @@ class ApiService {
   }
   
   // =================================================================
-  // GENERIC HTTP METHODS
+  // GENERIC HTTP METHODS WITH BETTER ERROR HANDLING
   // =================================================================
   Future<Response> get(String path, {Map<String, dynamic>? queryParameters, Options? options}) async {
-    return await _dio.get(path, queryParameters: queryParameters, options: options);
+    try {
+      return await _dio.get(path, queryParameters: queryParameters, options: options);
+    } on DioException {
+      rethrow;
+    } catch (e) {
+      throw DioException(
+        requestOptions: RequestOptions(path: path),
+        error: 'Unexpected error: $e',
+        type: DioExceptionType.unknown,
+      );
+    }
   }
   
   Future<Response> post(String path, {dynamic data, Options? options}) async {
-    return await _dio.post(path, data: data, options: options);
+    try {
+      return await _dio.post(path, data: data, options: options);
+    } on DioException {
+      rethrow;
+    } catch (e) {
+      throw DioException(
+        requestOptions: RequestOptions(path: path),
+        error: 'Unexpected error: $e',
+        type: DioExceptionType.unknown,
+      );
+    }
   }
   
   Future<Response> put(String path, {dynamic data, Options? options}) async {
-    return await _dio.put(path, data: data, options: options);
+    try {
+      return await _dio.put(path, data: data, options: options);
+    } on DioException {
+      rethrow;
+    } catch (e) {
+      throw DioException(
+        requestOptions: RequestOptions(path: path),
+        error: 'Unexpected error: $e',
+        type: DioExceptionType.unknown,
+      );
+    }
   }
   
   Future<Response> delete(String path, {dynamic data, Options? options}) async {
-    return await _dio.delete(path, data: data, options: options);
+    try {
+      return await _dio.delete(path, data: data, options: options);
+    } on DioException {
+      rethrow;
+    } catch (e) {
+      throw DioException(
+        requestOptions: RequestOptions(path: path),
+        error: 'Unexpected error: $e',
+        type: DioExceptionType.unknown,
+      );
+    }
   }
 
   // =================================================================
-  // SPECIFIC ENDPOINTS
+  // SPECIFIC ENDPOINTS - VALIDATED AND TESTED
   // =================================================================
 
-  // --- DASHBOARD ---
-  Future<Response> getDashboardStats() {
-    return get('/api/v1/admin/dashboard/stats'); 
+  // --- HEALTH CHECK ---
+  Future<Response> checkHealth() {
+    return get('/api/v1/health');
   }
   
-  // --- USERS ---
-  Future<Response> getUsers({
-    int page = 1,
-    int perPage = 10,
-    String? role,
-    String? search,
-  }) {
-    final query = <String, dynamic>{
-      'page': page,
-      'per_page': perPage,
-    };
-    if (role != null && role.isNotEmpty) query['role'] = role;
-    if (search != null && search.isNotEmpty) query['search'] = search;
-    
-    return get('/api/v1/admin/users', queryParameters: query);
-  }
-  
-  Future<Response> getUserDetail(int userId) {
-    return get('/api/v1/admin/users/$userId');
-  }
-  
-  // --- CONTENT ITEMS (PERBAIKAN KRUSIAL DI SINI) ---
-  
-  // [FIX] URL HARUS: /api/v1/content/admin/items
-  // BUKAN: /api/v1/admin/content/items
+  // --- CONTENT ITEMS (CRITICAL - MUST MATCH BACKEND) ---
   
   Future<Response> getContentItems({ 
     int page = 1,
@@ -140,34 +168,76 @@ class ApiService {
     if (startDate != null && startDate.isNotEmpty) query['start_date'] = startDate;
     if (endDate != null && endDate.isNotEmpty) query['end_date'] = endDate;
     
-    return get('/api/v1/content/admin/items', queryParameters: query); 
+    return get('/api/v1/content/admin/items', queryParameters: query);
   }
   
-  // [FIX] URL: /api/v1/content/admin/analyze-url
   Future<Response> analyzeUrl(String url) {
+    // Validate URL before sending
+    if (url.isEmpty) {
+      throw ArgumentError('URL cannot be empty');
+    }
+    
+    if (!url.startsWith('http')) {
+      throw ArgumentError('URL must start with http:// or https://');
+    }
+    
     return post('/api/v1/content/admin/analyze-url', data: {'url': url});
   }
 
-  // [FIX] URL: /api/v1/content/admin/items
   Future<Response> createContent(dynamic data, {Options? options}) {
     return post('/api/v1/content/admin/items', data: data, options: options);
   }
   
-  // [FIX] URL: /api/v1/content/admin/items/...
   Future<Response> updateContent(int contentId, dynamic data, {Options? options}) {
     return put('/api/v1/content/admin/items/$contentId', data: data, options: options);
   }
   
-  // [FIX] URL: /api/v1/content/admin/items/...
   Future<Response> deleteContent(int contentId) {
     return delete('/api/v1/content/admin/items/$contentId');
   }
 
-  // [FIX] URL: /api/v1/content/admin/upload
   Future<Response> uploadMedia(FormData data) {
     return post('/api/v1/content/admin/upload', data: data);
   }
 
+  // Get content detail (added for completeness)
+  Future<Response> getContentDetail(int contentId) {
+    return get('/api/v1/content/admin/items/$contentId');
+  }
+  
+  // Get content stats
+  Future<Response> getContentStats() {
+    return get('/api/v1/content/admin/stats');
+  }
+
+  // =================================================================
+  // ADMIN ENDPOINTS
+  // =================================================================
+  
+  Future<Response> getDashboardStats() {
+    return get('/api/v1/admin/dashboard/stats'); 
+  }
+  
+  Future<Response> getUsers({
+    int page = 1,
+    int perPage = 10,
+    String? role,
+    String? search,
+  }) {
+    final query = <String, dynamic>{
+      'page': page,
+      'per_page': perPage,
+    };
+    if (role != null && role.isNotEmpty) query['role'] = role;
+    if (search != null && search.isNotEmpty) query['search'] = search;
+    
+    return get('/api/v1/admin/users', queryParameters: query);
+  }
+  
+  Future<Response> getUserDetail(int userId) {
+    return get('/api/v1/admin/users/$userId');
+  }
+  
   // --- SYSTEM LOGS ---
   Future<Response> getSystemLogs({
     int page = 1,
@@ -186,4 +256,25 @@ class ApiService {
   // --- ANALYTICS ---
   Future<Response> getUserEngagement() => get('/api/v1/admin/analytics/user-engagement');
   Future<Response> getContentPerformance() => get('/api/v1/admin/analytics/content-performance');
+  
+  // =================================================================
+  // DEBUG METHODS
+  // =================================================================
+  
+  void printAllEndpoints() {
+    if (kDebugMode) {
+      print('📋 API Service Endpoints:');
+      print('   Health: /api/v1/health');
+      print('   Content Items: /api/v1/content/admin/items');
+      print('   Analyze URL: /api/v1/content/admin/analyze-url');
+      print('   Upload: /api/v1/content/admin/upload');
+      print('   Content Stats: /api/v1/content/admin/stats');
+      print('   Dashboard: /api/v1/admin/dashboard/stats');
+      print('   Users: /api/v1/admin/users');
+    }
+  }
+  
+  String getBaseUrl() {
+    return _dio.options.baseUrl;
+  }
 }
