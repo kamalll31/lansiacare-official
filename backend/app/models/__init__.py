@@ -1,466 +1,260 @@
 from app import db
 from datetime import datetime
-import bcrypt
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy import event, text
 import re
 
-# ========== EXISTING MODELS ==========
-# [Model-model yang sudah ada tetap dipertahankan]
-# User, UserProfile, LansiaProfile, EmergencyContact, FamilyConnection
-# Activity, ActivityParticipant, AdminStats
+# [SECURITY] Gunakan Werkzeug (Stabil & Bawaan Flask)
+from werkzeug.security import generate_password_hash, check_password_hash
 
-# ========== URL ANALYSIS MODEL (BARU) ==========
-class UrlAnalysis(db.Model):
-    """Model untuk menyimpan hasil analisis URL"""
-    __tablename__ = 'url_analyses'
+# ==============================================================================
+# UTILITY FUNCTIONS
+# ==============================================================================
+def generate_slug(title):
+    from unicodedata import normalize
+    if not title: return 'untitled'
+    slug = normalize('NFKD', title).encode('ascii', 'ignore').decode('ascii')
+    slug = re.sub(r'[^\w\s-]', '', slug).strip().lower()
+    slug = re.sub(r'[-\s]+', '-', slug)
+    return slug
+
+# ==============================================================================
+# 1. AUTH & USER MODELS
+# ==============================================================================
+
+class User(db.Model):
+    __tablename__ = 'users'
     
     id = db.Column(db.Integer, primary_key=True)
-    original_url = db.Column(db.String(500), nullable=False)
-    analyzed_url = db.Column(db.String(500))
     
-    # Metadata hasil analisis
-    provider = db.Column(db.String(50))  # youtube, vimeo, spotify, soundcloud
-    content_type = db.Column(db.String(50))  # video, audio, playlist, channel
-    content_id = db.Column(db.String(100))  # ID unik dari provider
+    # [CRITICAL] Phone wajib diisi (nullable=False) karena Mobile First
+    phone = db.Column(db.String(20), unique=True, nullable=False, index=True)
+    email = db.Column(db.String(255), unique=True, index=True, nullable=True)
     
-    # Informasi konten
-    title = db.Column(db.String(500))
-    description = db.Column(db.Text)
-    thumbnail_url = db.Column(db.String(500))
-    duration = db.Column(db.Integer)  # dalam detik
-    author = db.Column(db.String(255))
+    password_hash = db.Column(db.String(255), nullable=False)
+    role = db.Column(db.String(20), default='keluarga') # lansia, keluarga, admin
     
-    # Embed information
-    embed_code = db.Column(db.Text)
-    embed_url = db.Column(db.String(500))
-    embed_width = db.Column(db.Integer, default=640)
-    embed_height = db.Column(db.Integer, default=360)
-    
-    # Status analisis
-    is_valid = db.Column(db.Boolean, default=False)
-    error_message = db.Column(db.Text)
-    
-    # Timestamps
+    is_verified = db.Column(db.Boolean, default=False)
+    is_active = db.Column(db.Boolean, default=True)
+    last_login = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    __table_args__ = (
-        db.Index('idx_url_analyses_url', 'original_url'),
-        db.Index('idx_url_analyses_provider', 'provider'),
-        db.Index('idx_url_analyses_created_at', 'created_at'),
-    )
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
     
-    def to_dict(self):
-        """Convert to dictionary for API response"""
+    def to_jwt_claims(self):
+        """Data yang akan masuk ke dalam Token JWT"""
         return {
-            'id': self.id,
-            'original_url': self.original_url,
-            'analyzed_url': self.analyzed_url,
-            'provider': self.provider,
-            'content_type': self.content_type,
-            'content_id': self.content_id,
-            'title': self.title,
-            'description': self.description,
-            'thumbnail_url': self.thumbnail_url,
-            'duration': self.duration,
-            'duration_formatted': self._format_duration(),
-            'author': self.author,
-            'embed_code': self.embed_code,
-            'embed_url': self.embed_url,
-            'embed_width': self.embed_width,
-            'embed_height': self.embed_height,
-            'is_valid': self.is_valid,
-            'error_message': self.error_message,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'phone': self.phone, 
+            'role': self.role, 
+            'is_verified': self.is_verified,
+            'email': self.email
         }
     
-    def _format_duration(self):
-        """Format duration to HH:MM:SS or MM:SS"""
-        if not self.duration:
-            return "0:00"
-        
-        hours = self.duration // 3600
-        minutes = (self.duration % 3600) // 60
-        seconds = self.duration % 60
-        
-        if hours > 0:
-            return f"{hours}:{minutes:02d}:{seconds:02d}"
-        return f"{minutes}:{seconds:02d}"
-    
-    @staticmethod
-    def analyze_youtube_url(url):
-        """Analyze YouTube URL and extract metadata"""
-        import re
-        
-        patterns = [
-            # Standard YouTube URLs
-            r'(?:https?:\/\/)?(?:www\.)?youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)',
-            r'(?:https?:\/\/)?(?:www\.)?youtu\.be\/([a-zA-Z0-9_-]+)',
-            # Shorts
-            r'(?:https?:\/\/)?(?:www\.)?youtube\.com\/shorts\/([a-zA-Z0-9_-]+)',
-            # Embed URLs
-            r'(?:https?:\/\/)?(?:www\.)?youtube\.com\/embed\/([a-zA-Z0-9_-]+)',
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, url)
-            if match:
-                video_id = match.group(1)
-                return {
-                    'provider': 'youtube',
-                    'content_type': 'video',
-                    'content_id': video_id,
-                    'embed_url': f'https://www.youtube.com/embed/{video_id}',
-                    'thumbnail_url': f'https://img.youtube.com/vi/{video_id}/hqdefault.jpg',
-                    'analyzed_url': f'https://www.youtube.com/watch?v={video_id}'
-                }
-        
-        return None
-    
-    @staticmethod
-    def analyze_vimeo_url(url):
-        """Analyze Vimeo URL and extract metadata"""
-        import re
-        
-        pattern = r'(?:https?:\/\/)?(?:www\.)?vimeo\.com\/(\d+)'
-        match = re.search(pattern, url)
-        
-        if match:
-            video_id = match.group(1)
-            return {
-                'provider': 'vimeo',
-                'content_type': 'video',
-                'content_id': video_id,
-                'embed_url': f'https://player.vimeo.com/video/{video_id}',
-                'thumbnail_url': f'https://vumbnail.com/{video_id}.jpg',
-                'analyzed_url': f'https://vimeo.com/{video_id}'
-            }
-        
-        return None
-    
-    @classmethod
-    def create_from_url(cls, url):
-        """Create UrlAnalysis instance from URL"""
-        analysis = cls(original_url=url)
-        
-        # Try YouTube first
-        youtube_data = cls.analyze_youtube_url(url)
-        if youtube_data:
-            analysis.provider = youtube_data['provider']
-            analysis.content_type = youtube_data['content_type']
-            analysis.content_id = youtube_data['content_id']
-            analysis.embed_url = youtube_data['embed_url']
-            analysis.thumbnail_url = youtube_data['thumbnail_url']
-            analysis.analyzed_url = youtube_data['analyzed_url']
-            analysis.is_valid = True
-            return analysis
-        
-        # Try Vimeo
-        vimeo_data = cls.analyze_vimeo_url(url)
-        if vimeo_data:
-            analysis.provider = vimeo_data['provider']
-            analysis.content_type = vimeo_data['content_type']
-            analysis.content_id = vimeo_data['content_id']
-            analysis.embed_url = vimeo_data['embed_url']
-            analysis.thumbnail_url = vimeo_data['thumbnail_url']
-            analysis.analyzed_url = vimeo_data['analyzed_url']
-            analysis.is_valid = True
-            return analysis
-        
-        # If no provider matched
-        analysis.is_valid = False
-        analysis.error_message = 'URL tidak didukung. Hanya YouTube dan Vimeo yang didukung saat ini.'
-        return analysis
+    @hybrid_property
+    def full_name(self):
+        if hasattr(self, 'profile') and self.profile: 
+            return self.profile.full_name
+        return "User"
 
-# ========== CONTENT ITEM MODEL (DIPERBAIKI) ==========
+    def to_dict(self):
+        return {
+            'id': self.id, 
+            'phone': self.phone, 
+            'email': self.email, 
+            'role': self.role, 
+            'full_name': self.full_name, 
+            'is_verified': self.is_verified
+        }
+
+class UserProfile(db.Model):
+    __tablename__ = 'user_profiles'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), unique=True, nullable=False)
+    full_name = db.Column(db.String(100), nullable=False)
+    address = db.Column(db.String(255))
+    birth_date = db.Column(db.Date)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class OTPSession(db.Model):
+    __tablename__ = 'otp_sessions'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    phone = db.Column(db.String(20), nullable=False, index=True)
+    otp_code = db.Column(db.String(6), nullable=False)
+    purpose = db.Column(db.String(20), default='registration')
+    
+    # [SECURITY] Rate limiting simple
+    attempts = db.Column(db.Integer, default=0) 
+    is_used = db.Column(db.Boolean, default=False)
+    
+    # [PERFORMANCE] Index untuk cleanup job
+    expires_at = db.Column(db.DateTime, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # [PERFORMANCE] Composite Index untuk query validasi yang cepat
+    __table_args__ = (
+        db.Index('idx_otp_phone_used', 'phone', 'is_used'),
+    )
+
+    def is_expired(self):
+        return datetime.utcnow() > self.expires_at
+
+# ==============================================================================
+# 2. LANSIA & FAMILY SPECIFIC MODELS
+# ==============================================================================
+
+class LansiaProfile(db.Model):
+    __tablename__ = 'lansia_profiles'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), unique=True)
+    
+    blood_type = db.Column(db.String(5))
+    medical_history = db.Column(db.Text)
+    emergency_notes = db.Column(db.Text)
+    
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class FamilyConnection(db.Model):
+    __tablename__ = 'family_connections'
+    id = db.Column(db.Integer, primary_key=True)
+    lansia_user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    family_user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    
+    status = db.Column(db.String(20), default='pending') # pending, approved, rejected
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # [DATA INTEGRITY] Mencegah satu keluarga connect 2x ke lansia yang sama
+    __table_args__ = (
+        db.UniqueConstraint('lansia_user_id', 'family_user_id', name='uq_family_connection'),
+    )
+
+# ==============================================================================
+# 3. CONTENT & CMS MODELS
+# ==============================================================================
+
 class ContentItem(db.Model):
     __tablename__ = 'content_items'
     
     id = db.Column(db.Integer, primary_key=True)
-    
-    # Basic Information
-    title = db.Column(db.String(255), nullable=False, index=True)
-    excerpt = db.Column(db.String(500))
+    title = db.Column(db.String(255), nullable=False)
     slug = db.Column(db.String(300), unique=True, index=True)
+    excerpt = db.Column(db.String(500))
+    content_text = db.Column(db.Text)
     
-    # Content Type (Hybrid: embedded or uploaded)
-    content_type = db.Column(db.Enum(
-        'embedded_video',    # Video dari YouTube/Vimeo
-        'embedded_audio',    # Audio dari Spotify/SoundCloud
-        'uploaded_video',    # Video upload langsung
-        'uploaded_audio',    # Audio upload langsung
-        'article',          # Artikel teks
-        'infographic',      # Gambar/infografis
-        name='content_types'
-    ), nullable=False, default='article')
+    # Polymorphic Fields
+    content_type = db.Column(db.String(50), default='article') 
+    category = db.Column(db.String(50), default='kesehatan')
     
-    # Relationship dengan UrlAnalysis (jika dari analisis URL)
-    url_analysis_id = db.Column(db.Integer, db.ForeignKey('url_analyses.id', ondelete='SET NULL'), nullable=True)
-    url_analysis = db.relationship('UrlAnalysis', backref='content_items')
-    
-    # ===== EMBEDDED CONTENT FIELDS =====
-    embed_url = db.Column(db.String(500))       # Original URL
-    embed_provider = db.Column(db.String(50))   # youtube, spotify, vimeo
-    embed_id = db.Column(db.String(100))        # Video/Audio ID
-    embed_type = db.Column(db.String(20))       # video, audio, playlist, episode
-    embed_code = db.Column(db.Text)             # HTML embed code
-    
-    # ===== UPLOADED CONTENT FIELDS =====
-    media_url = db.Column(db.String(500))       # URL file yang di-upload
+    # Media Fields
     thumbnail_url = db.Column(db.String(500))
-    content_text = db.Column(db.Text)           # Untuk artikel
-    file_size = db.Column(db.Integer)           # File size in bytes
-    mime_type = db.Column(db.String(100))       # MIME type
+    media_url = db.Column(db.String(500))
+    embed_url = db.Column(db.String(500))
+    duration = db.Column(db.Integer)
     
-    # ===== COMMON FIELDS =====
-    duration = db.Column(db.Integer)           # Durasi dalam detik
-    
-    # Categories khusus untuk Lansia
-    category = db.Column(db.Enum(
-        'kesehatan_praktis',      # Tips kesehatan praktis
-        'senam_lansia',           # Video senam/peregangan
-        'obat_dan_pengobatan',    # Info obat
-        'bansos_info',            # Info bantuan sosial
-        'komunitas_cerita',       # Cerita inspirasi
-        'keluarga_tips',          # Tips keluarga
-        'berita_ringan',          # Berita penting ringkas
-        'tutorial_aplikasi',      # Tutorial penggunaan app
-        name='content_categories'
-    ), nullable=False, default='kesehatan_praktis')
-    
-    # Author & Status
-    author_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    # Status & Metrics
     is_published = db.Column(db.Boolean, default=False, index=True)
-    is_featured = db.Column(db.Boolean, default=False, index=True)
-    is_pinned = db.Column(db.Boolean, default=False)
-    status = db.Column(db.Enum('draft', 'published', 'archived', name='content_status'), default='draft')
-    
-    # Accessibility Features
-    is_audio_only = db.Column(db.Boolean, default=False)
-    has_subtitles = db.Column(db.Boolean, default=False)
-    has_transcript = db.Column(db.Boolean, default=False)
-    has_audio_description = db.Column(db.Boolean, default=False)
-    
-    # Engagement Metrics
+    is_featured = db.Column(db.Boolean, default=False)
     view_count = db.Column(db.Integer, default=0)
-    like_count = db.Column(db.Integer, default=0)
-    share_count = db.Column(db.Integer, default=0)
-    completion_rate = db.Column(db.Float, default=0)
     
-    # Accessibility Score (0-100)
-    accessibility_score = db.Column(db.Integer, default=0)
-    
-    # SEO & Metadata
-    meta_title = db.Column(db.String(255))
-    meta_description = db.Column(db.String(500))
-    keywords = db.Column(db.String(500))
-    
-    # Timestamps
-    published_at = db.Column(db.DateTime, index=True)
-    scheduled_at = db.Column(db.DateTime, index=True)
+    author_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Relationships
-    author = db.relationship('User', backref='content_items')
-    transcripts = db.relationship('ContentTranscript', backref='content_item', cascade='all, delete-orphan')
-    consumptions = db.relationship('ContentConsumption', backref='content_item', cascade='all, delete-orphan')
-    
-    __table_args__ = (
-        db.Index('idx_content_items_category', 'category'),
-        db.Index('idx_content_items_author_id', 'author_id'),
-        db.Index('idx_content_items_url_analysis_id', 'url_analysis_id'),
-    )
-    
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        if not self.slug and self.title:
-            self.slug = self._generate_slug(self.title)
-        
-        # Jika ada URL analysis, isi field embed
-        if self.url_analysis and self.url_analysis.is_valid:
-            self._populate_from_url_analysis()
-    
-    def _populate_from_url_analysis(self):
-        """Populate content fields from URL analysis"""
-        if not self.url_analysis:
-            return
-        
-        analysis = self.url_analysis
-        self.content_type = 'embedded_video' if analysis.provider in ['youtube', 'vimeo'] else 'embedded_audio'
-        self.embed_url = analysis.embed_url
-        self.embed_provider = analysis.provider
-        self.embed_id = analysis.content_id
-        self.embed_type = analysis.content_type
-        self.thumbnail_url = analysis.thumbnail_url
-        self.duration = analysis.duration
-        
-        # Generate embed code
-        if analysis.provider == 'youtube':
-            self.embed_code = f'<iframe width="640" height="360" src="https://www.youtube.com/embed/{analysis.content_id}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>'
-        elif analysis.provider == 'vimeo':
-            self.embed_code = f'<iframe src="https://player.vimeo.com/video/{analysis.content_id}" width="640" height="360" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>'
-    
-    @staticmethod
-    def _generate_slug(title):
-        """Generate slug from title"""
-        import re
-        from unicodedata import normalize
-        slug = normalize('NFKD', title).encode('ascii', 'ignore').decode('ascii')
-        slug = re.sub(r'[^\w\s-]', '', slug).strip().lower()
-        slug = re.sub(r'[-\s]+', '-', slug)
-        return slug
-    
+        if not self.slug and self.title: 
+            self.slug = generate_slug(self.title)
+
     def to_dict(self):
-        """Convert to dictionary for API response"""
-        data = {
+        return {
             'id': self.id,
             'title': self.title,
-            'excerpt': self.excerpt,
             'slug': self.slug,
             'content_type': self.content_type,
-            'category': self.category,
-            'category_display': self._get_category_display(),
-            'author_id': self.author_id,
-            'author_name': self.author.full_name if self.author else 'Unknown',
-            'is_published': self.is_published,
-            'is_featured': self.is_featured,
-            'is_pinned': self.is_pinned,
-            'status': self.status,
-            'duration': self.duration,
-            'duration_formatted': self._format_duration(),
-            'view_count': self.view_count,
-            'like_count': self.like_count,
-            'share_count': self.share_count,
-            'completion_rate': self.completion_rate,
-            'accessibility_score': self.accessibility_score,
-            'is_audio_only': self.is_audio_only,
-            'has_subtitles': self.has_subtitles,
-            'has_transcript': self.has_transcript,
-            'has_audio_description': self.has_audio_description,
-            'published_at': self.published_at.isoformat() if self.published_at else None,
-            'scheduled_at': self.scheduled_at.isoformat() if self.scheduled_at else None,
-            'created_at': self.created_at.isoformat(),
-            'updated_at': self.updated_at.isoformat(),
+            'thumbnail_url': self.thumbnail_url,
+            'created_at': self.created_at.isoformat()
         }
-        
-        # Add URL analysis info if exists
-        if self.url_analysis:
-            data['url_analysis'] = self.url_analysis.to_dict()
-        
-        # Add content-specific fields
-        if self.content_type.startswith('embedded'):
-            data.update({
-                'embed_url': self.embed_url,
-                'embed_provider': self.embed_provider,
-                'embed_id': self.embed_id,
-                'embed_type': self.embed_type,
-                'embed_code': self.embed_code,
-                'thumbnail_url': self._get_embed_thumbnail(),
-            })
-        elif self.content_type.startswith('uploaded'):
-            data.update({
-                'media_url': self.media_url,
-                'thumbnail_url': self.thumbnail_url,
-                'file_size': self.file_size,
-                'mime_type': self.mime_type,
-                'file_size_formatted': self._format_file_size(),
-            })
-        elif self.content_type == 'article':
-            data.update({
-                'content_text': self.content_text,
-            })
-        
-        return data
-    
-    def _get_category_display(self):
-        """Get category display name"""
-        category_names = {
-            'kesehatan_praktis': 'Tips Kesehatan Praktis',
-            'senam_lansia': 'Senam Lansia',
-            'obat_dan_pengobatan': 'Obat & Pengobatan',
-            'bansos_info': 'Info Bansos',
-            'komunitas_cerita': 'Cerita Komunitas',
-            'keluarga_tips': 'Tips Keluarga',
-            'berita_ringan': 'Berita Ringan',
-            'tutorial_aplikasi': 'Tutorial Aplikasi',
-        }
-        return category_names.get(self.category, self.category)
-    
-    def _format_duration(self):
-        """Format duration to MM:SS or HH:MM:SS"""
-        if not self.duration:
-            return "0:00"
-        
-        hours = self.duration // 3600
-        minutes = (self.duration % 3600) // 60
-        seconds = self.duration % 60
-        
-        if hours > 0:
-            return f"{hours}:{minutes:02d}:{seconds:02d}"
-        return f"{minutes}:{seconds:02d}"
-    
-    def _format_file_size(self):
-        """Format file size to human readable format"""
-        if not self.file_size:
-            return "0 B"
-        
-        for unit in ['B', 'KB', 'MB', 'GB']:
-            if self.file_size < 1024.0:
-                return f"{self.file_size:.1f} {unit}"
-            self.file_size /= 1024.0
-        return f"{self.file_size:.1f} TB"
-    
-    def _get_embed_thumbnail(self):
-        """Get thumbnail URL for embedded content"""
-        if self.embed_provider == 'youtube' and self.embed_id:
-            return f'https://img.youtube.com/vi/{self.embed_id}/hqdefault.jpg'
-        elif self.embed_provider == 'vimeo' and self.embed_id:
-            return f'https://vumbnail.com/{self.embed_id}.jpg'
-        return self.thumbnail_url
-    
-    def increment_view_count(self):
-        """Increment view count"""
-        self.view_count += 1
-        db.session.commit()
 
-# ========== EXISTING MODELS CONTINUED ==========
-# ContentTranscript, ContentConsumption, SystemLog tetap sama seperti sebelumnya
+# Alias
+ContentArticle = ContentItem 
 
-# Alias untuk membuat ContentArticle juga tersedia (mengarah ke ContentItem)
-ContentArticle = ContentItem
-
-# ========== HELPER FUNCTIONS FOR URL ANALYSIS ==========
-def analyze_url_service(url):
-    """Service function to analyze URL and return structured data"""
-    from app import db
+class UrlAnalysis(db.Model):
+    __tablename__ = 'url_analyses'
+    id = db.Column(db.Integer, primary_key=True)
+    original_url = db.Column(db.String(500), nullable=False)
+    title = db.Column(db.String(500))
+    is_valid = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    try:
-        # Create URL analysis
-        url_analysis = UrlAnalysis.create_from_url(url)
-        
-        # Save to database
-        db.session.add(url_analysis)
-        db.session.commit()
-        
-        if url_analysis.is_valid:
-            return {
-                'success': True,
-                'analysis': url_analysis.to_dict(),
-                'message': 'URL berhasil dianalisis'
-            }
-        else:
-            return {
-                'success': False,
-                'error': url_analysis.error_message,
-                'analysis': url_analysis.to_dict()
-            }
-            
-    except Exception as e:
-        db.session.rollback()
-        return {
-            'success': False,
-            'error': f'Gagal menganalisis URL: {str(e)}'
-        }
+    content_items = db.relationship('ContentItem', backref='url_analysis', lazy='dynamic')
+
+# ==============================================================================
+# 4. ACTIVITY & LOGS MODELS
+# ==============================================================================
+
+class Activity(db.Model):
+    __tablename__ = 'activities'
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+    scheduled_at = db.Column(db.DateTime, nullable=False, index=True)
+    location = db.Column(db.String(200)) 
+    
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class ActivityParticipant(db.Model):
+    __tablename__ = 'activity_participants'
+    id = db.Column(db.Integer, primary_key=True)
+    activity_id = db.Column(db.Integer, db.ForeignKey('activities.id', ondelete='CASCADE'))
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'))
+    status = db.Column(db.String(20), default='joined') 
+    joined_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class ContentConsumption(db.Model):
+    __tablename__ = 'content_consumption'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'))
+    content_id = db.Column(db.Integer, db.ForeignKey('content_items.id', ondelete='CASCADE'))
+    progress_seconds = db.Column(db.Integer, default=0) 
+    is_finished = db.Column(db.Boolean, default=False)
+    last_accessed = db.Column(db.DateTime, default=datetime.utcnow)
+
+class SystemLog(db.Model):
+    __tablename__ = 'system_logs'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    action = db.Column(db.String(100))
+    details = db.Column(db.Text)
+    ip_address = db.Column(db.String(50))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+# ==============================================================================
+# SETUP RELATIONSHIPS (LATE BINDING)
+# ==============================================================================
+def setup_relationships():
+    # User Relationships
+    User.profile = db.relationship('UserProfile', backref='user', uselist=False, cascade='all, delete-orphan')
+    User.lansia_profile = db.relationship('LansiaProfile', backref='user', uselist=False, cascade='all, delete-orphan')
+    
+    # [SMART] Link OTP by Phone Number
+    User.otp_sessions = db.relationship(
+        'OTPSession',
+        primaryjoin='foreign(OTPSession.phone) == remote(User.phone)',
+        lazy='dynamic',
+        cascade='all, delete-orphan'
+    )
+    
+    User.content_items = db.relationship('ContentItem', backref='author', lazy='dynamic')
+    User.activities = db.relationship('Activity', backref='creator', lazy='dynamic', foreign_keys='Activity.created_by')
+    User.participations = db.relationship('ActivityParticipant', backref='user', lazy='dynamic')
+
+# Eksekusi Setup Relasi
+setup_relationships()
