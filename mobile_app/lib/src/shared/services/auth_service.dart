@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {
   // [FIX] URL sudah diganti ke PythonAnywhere (Cloud)
-  static const String baseUrl = 'https://kamalll31.pythonanywhere.com/api/v1';
+  static const String baseUrl = 'https://lansiacare-backend.vercel.app';
   
   static Future<Map<String, dynamic>> register({
     required String phone,

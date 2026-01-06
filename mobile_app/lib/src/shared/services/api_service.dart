@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ApiService {
   // [FIX] Ganti Localhost dengan URL PythonAnywhere
   // Pastikan akhiran /api/v1 ada disini
-  static const String baseUrl = 'https://kamalll31.pythonanywhere.com/api/v1';
+  static const String baseUrl = 'https://lansiacare-backend.vercel.app';
   
   static Future<Map<String, String>> _getHeaders() async {
     try {

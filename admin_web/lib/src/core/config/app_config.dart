@@ -13,7 +13,7 @@ class AppConfig {
     // [FIX] HAPUS '/api/v1' DARI SINI
     // Cukup domain saja: 'https://kamalll31.pythonanywhere.com'
     // Karena ApiService akan menggabungkannya menjadi: domain + /api/v1 + /endpoint
-    return dotenv.env['API_BASE_URL'] ?? 'https://kamalll31.pythonanywhere.com';
+    return dotenv.env['API_BASE_URL'] ?? 'https://lansiacare-backend.vercel.app';
   }
 
   /// URL Project Supabase
