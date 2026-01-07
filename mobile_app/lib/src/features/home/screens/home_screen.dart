@@ -262,9 +262,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildCurrentScreen() {
     switch (_currentIndex) {
       case 0: return _buildHomeContent();
-      case 1: return ActivitiesScreen();
-      case 2: return ServicesScreen();
-      case 3: return ProfileScreen();
+      case 1: return const ActivitiesScreen();
+      case 2: return const ServicesScreen();
+      case 3: return const ProfileScreen();
       default: return _buildHomeContent();
     }
   }
@@ -473,7 +473,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => EmergencyContactsScreen(),
+                        builder: (context) => const EmergencyContactsScreen(),
                       ),
                     );
                   },

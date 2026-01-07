@@ -324,7 +324,7 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
                                         title: Text(participant.userName),
                                         subtitle: Text('Terdaftar: ${_formatDate(participant.registeredAt)}'),
                                       )
-                                    ).toList(),
+                                    ),
                                   ],
                                 ),
                               ),

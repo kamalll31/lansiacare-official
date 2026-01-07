@@ -36,7 +36,7 @@ class _LoginScreenState extends State<LoginScreen> {
       // Navigate to home screen
       Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (context) => HomeScreen()),
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
         (route) => false,
       );
     } else {
@@ -163,7 +163,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: () {
                       Navigator.pushReplacement(
                         context,
-                        MaterialPageRoute(builder: (context) => RegisterScreen()),
+                        MaterialPageRoute(builder: (context) => const RegisterScreen()),
                       );
                     },
                     child: const Text(

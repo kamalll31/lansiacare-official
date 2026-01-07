@@ -1,15 +1,16 @@
 import os
-from flask import Flask, jsonify, request # [FIX] Tambah request
+from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS 
 from flask_migrate import Migrate
 from dotenv import load_dotenv
-from datetime import datetime # [FIX] Tambah datetime
-from sqlalchemy import text # [FIX] Untuk query health check yang aman
+from datetime import datetime
+from sqlalchemy import text 
 
 load_dotenv()
 
+# Inisialisasi Ekstensi
 db = SQLAlchemy()
 jwt = JWTManager()
 migrate = Migrate()
@@ -22,27 +23,32 @@ def create_app():
     # ==================================================================
     basedir = os.path.abspath(os.path.dirname(__file__))
     
-    # [INFO] Default ke SQLite untuk Development, ganti ke PostgreSQL di Production
+    # Prioritaskan DATABASE_URL dari Environment Variable (Vercel)
     app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///' + os.path.join(basedir, '../instance/dev.db'))
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    
+    # Security Config
     app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'dev-secret-change-me')
     app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 86400  # 24 jam
     app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # Max 100MB
     
     # ==================================================================
-    # 2. INISIALISASI
+    # 2. INISIALISASI DATABASE & MIGRATE
     # ==================================================================
     db.init_app(app)
     jwt.init_app(app)
     
-    # [CRITICAL FIX] Load Models SEBELUM init migrate
-    # Agar Alembic/Flask-Migrate mendeteksi tabel User, OTPSession, dll
-    from app import models 
+    # Load Models agar terdeteksi oleh Flask-Migrate
+    # Pastikan file app/models.py ada
+    try:
+        from app import models 
+    except ImportError:
+        pass # Abaikan jika belum ada models, agar app tetap jalan
     
     migrate.init_app(app, db)
     
     # ==================================================================
-    # 3. CORS KONFIGURASI (DETAILED)
+    # 3. KONFIGURASI CORS (PENTING UNTUK FLUTTER WEB)
     # ==================================================================
     CORS(app, 
          resources={
@@ -55,31 +61,25 @@ def create_app():
          })
     
     # ==================================================================
-    # 4. REGISTER BLUEPRINTS
-    # [WARNING] Pastikan struktur folder Anda sesuai: app/api/v1/auth.py dll
-    # Jika folder Anda app/routes/auth.py, GANTI import di bawah ini!
+    # 4. REGISTER BLUEPRINTS (ROUTES)
     # ==================================================================
     try:
-        # Contoh jika struktur folder Anda: app/routes/auth.py
-        # Ganti 'app.api.v1.auth' menjadi 'app.routes.auth' jika perlu
+        # [PENTING] Sesuaikan path ini dengan struktur folder Anda yang sebenarnya!
+        # Jika file ada di folder 'app/routes/auth_routes.py', ganti import di bawah ini.
         
-        # Asumsi: Anda mengikuti struktur yang ada di kode awal Anda
+        # Opsi A: Jika struktur folder app/api/v1/auth.py
         from app.api.v1.auth import auth_bp
-        # from app.api.v1.users import users_bp
-        # ... import blueprint lain ...
-
         app.register_blueprint(auth_bp, url_prefix='/api/v1/auth')
-        # app.register_blueprint(users_bp, url_prefix='/api/v1/users')
         
-        # NOTE: Saya comment blueprint lain agar tidak error jika filenya belum ada.
-        # Uncomment satu per satu saat Anda membuat file-nya.
+        # Opsi B (Contoh): from app.routes.auth_routes import auth_bp
+        # app.register_blueprint(auth_bp, url_prefix='/api/v1/auth')
         
     except ImportError as e:
-        print(f"⚠️ WARNING: Blueprint Import Error - {e}")
-        print("Pastikan folder dan file routes sudah dibuat (misal: app/api/v1/auth.py)")
+        print(f"⚠️ WARNING: Gagal Import Blueprint Auth: {e}")
+        # Kita tidak raise error agar server tetap hidup untuk debugging
 
     # ==================================================================
-    # 5. ERROR HANDLERS
+    # 5. ERROR HANDLERS & HEALTH CHECK
     # ==================================================================
     @app.errorhandler(404)
     def not_found(e):
@@ -89,17 +89,18 @@ def create_app():
     def internal_error(e):
         return jsonify({'success': False, 'error': 'Internal Server Error'}), 500
     
-    # ==================================================================
-    # 7. HEALTH CHECK
-    # ==================================================================
     @app.route('/')
     def index():
-        return jsonify({'status': 'online', 'service': 'Lansia Care Backend'})
+        return jsonify({
+            'status': 'online', 
+            'service': 'Lansia Care Backend',
+            'environment': os.environ.get('FLASK_ENV', 'development')
+        })
     
     @app.route('/api/v1/health')
     def health_check():
         try:
-            # Gunakan text() untuk kompatibilitas SQLAlchemy terbaru
+            # Cek koneksi DB dengan query ringan
             db.session.execute(text('SELECT 1'))
             db_status = 'connected'
         except Exception as e:
@@ -109,17 +110,6 @@ def create_app():
             'status': 'healthy',
             'database': db_status,
             'timestamp': datetime.utcnow().isoformat()
-        })
-
-    # ==================================================================
-    # 9. TEST CORS
-    # ==================================================================
-    @app.route('/api/v1/test-cors', methods=['GET', 'POST', 'OPTIONS'])
-    def test_cors():
-        return jsonify({
-            'success': True,
-            'message': 'CORS OK',
-            'method': request.method
         })
     
     return app

@@ -1,22 +1,21 @@
 from app import create_app, db
 from flask_migrate import Migrate
-# [FIX] 1. Import library CORS
-from flask_cors import CORS 
+
+# [CLEAN CODE] Tidak perlu import CORS di sini lagi.
+# Konfigurasi CORS sudah terpusat di app/__init__.py
 
 app = create_app()
-
-# [FIX] 2. Aktifkan CORS untuk seluruh aplikasi
-# Ini mengizinkan semua domain (termasuk Flutter Web) mengakses API
-CORS(app) 
-
 migrate = Migrate(app, db)
 
+# ==========================================
+# COMMANDS UNTUK DATABASE (Terminal)
+# ==========================================
 @app.cli.command("init-db")
 def init_db():
     """Initialize the database."""
-    db.drop_all()  # Hapus semua tables yang ada
-    db.create_all()  # Buat tables baru
-    print("Database initialized!")
+    db.drop_all()
+    db.create_all()
+    print("Database initialized successfully!")
 
 @app.cli.command("reset-db")
 def reset_db():
@@ -25,6 +24,10 @@ def reset_db():
     db.create_all()
     print("Database reset successfully!")
 
+# ==========================================
+# ENTRY POINT (Hanya untuk Lokal)
+# ==========================================
 if __name__ == '__main__':
-    # Host 0.0.0.0 penting agar bisa diakses dari HP/Emulator/Web di jaringan sama
+    # Vercel tidak membaca blok ini.
+    # Blok ini hanya jalan saat Anda mengetik 'python run.py' di laptop.
     app.run(debug=True, host='0.0.0.0', port=5000)

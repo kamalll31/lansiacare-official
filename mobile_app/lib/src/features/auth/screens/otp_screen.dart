@@ -43,7 +43,7 @@ class _OtpScreenState extends State<OtpScreen> {
       // Navigate to home screen
       Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (context) => HomeScreen()),
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
         (route) => false,
       );
     } else {

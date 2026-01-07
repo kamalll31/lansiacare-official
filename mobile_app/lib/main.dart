@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:lansiacare/src/core/theme/simple_theme.dart'; 
-import 'package:lansiacare/src/features/auth/screens/register_screen.dart';
 import 'package:lansiacare/src/features/auth/screens/login_screen.dart';
 import 'package:lansiacare/src/features/home/screens/home_screen.dart';
 import 'package:lansiacare/src/shared/services/auth_service.dart';
