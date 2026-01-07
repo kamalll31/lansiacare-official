@@ -324,7 +324,7 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
                         
                         // UPDATED TIME (jika ada)
                         Text(
-                          _formatDate(content.updatedAt!),
+                          _formatDate(content.updatedAt),
                           style: const TextStyle(
                             fontSize: 12,
                             color: Colors.grey,
