@@ -89,15 +89,12 @@ class OTPSession(db.Model):
     otp_code = db.Column(db.String(6), nullable=False)
     purpose = db.Column(db.String(20), default='registration')
     
-    # [SECURITY] Rate limiting simple
     attempts = db.Column(db.Integer, default=0) 
     is_used = db.Column(db.Boolean, default=False)
     
-    # [PERFORMANCE] Index untuk cleanup job
     expires_at = db.Column(db.DateTime, nullable=False, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # [PERFORMANCE] Composite Index untuk query validasi yang cepat
     __table_args__ = (
         db.Index('idx_otp_phone_used', 'phone', 'is_used'),
     )
@@ -127,10 +124,9 @@ class FamilyConnection(db.Model):
     lansia_user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     family_user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     
-    status = db.Column(db.String(20), default='pending') # pending, approved, rejected
+    status = db.Column(db.String(20), default='pending') 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    # [DATA INTEGRITY] Mencegah satu keluarga connect 2x ke lansia yang sama
     __table_args__ = (
         db.UniqueConstraint('lansia_user_id', 'family_user_id', name='uq_family_connection'),
     )
@@ -164,6 +160,10 @@ class ContentItem(db.Model):
     view_count = db.Column(db.Integer, default=0)
     
     author_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'))
+    
+    # [FIX] INI YANG HILANG! Jembatan ke UrlAnalysis
+    url_analysis_id = db.Column(db.Integer, db.ForeignKey('url_analyses.id', ondelete='SET NULL'), nullable=True)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -193,6 +193,7 @@ class UrlAnalysis(db.Model):
     is_valid = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
+    # Relationship ini sekarang AMAN karena 'url_analysis_id' sudah ada di ContentItem
     content_items = db.relationship('ContentItem', backref='url_analysis', lazy='dynamic')
 
 # ==============================================================================
@@ -244,7 +245,6 @@ def setup_relationships():
     User.profile = db.relationship('UserProfile', backref='user', uselist=False, cascade='all, delete-orphan')
     User.lansia_profile = db.relationship('LansiaProfile', backref='user', uselist=False, cascade='all, delete-orphan')
     
-    # [SMART] Link OTP by Phone Number
     User.otp_sessions = db.relationship(
         'OTPSession',
         primaryjoin='foreign(OTPSession.phone) == remote(User.phone)',
