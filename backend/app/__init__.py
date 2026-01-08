@@ -155,5 +155,5 @@ def create_app():
             return jsonify({'status': 'healthy', 'database': 'connected'})
         except Exception as e:
             return jsonify({'status': 'healthy', 'database': f'error: {str(e)}'})
-    
+    #
     return app
