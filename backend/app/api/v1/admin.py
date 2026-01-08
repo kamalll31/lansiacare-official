@@ -217,4 +217,4 @@ def get_recent_emergencies():
             
         return jsonify({'success': True, 'emergencies': data}), 200
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500#
