@@ -23,8 +23,7 @@ def create_app():
     # ==================================================================
     basedir = os.path.abspath(os.path.dirname(__file__))
     
-    # Mengambil DATABASE_URL dari Vercel (Environment Variable)
-    # Jika tidak ada, fallback ke sqlite lokal (dev.db)
+    # Mengambil DATABASE_URL dari Vercel
     app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///' + os.path.join(basedir, '../instance/dev.db'))
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
@@ -39,7 +38,7 @@ def create_app():
     db.init_app(app)
     jwt.init_app(app)
     
-    # [PENTING] Load Models agar terdeteksi oleh Flask-Migrate & SQLAlchemy
+    # Load Models agar terdeteksi
     try:
         from app import models 
     except ImportError:
@@ -48,9 +47,8 @@ def create_app():
     migrate.init_app(app, db)
     
     # ==================================================================
-    # 3. KONFIGURASI CORS (PENTING UNTUK FLUTTER WEB)
+    # 3. KONFIGURASI CORS
     # ==================================================================
-    # Mengizinkan semua domain mengakses semua route di /api/*
     CORS(app, 
          resources={
              r"/api/*": {
@@ -62,40 +60,32 @@ def create_app():
          })
 
     # ==================================================================
-    # [FITUR DARURAT] SETUP DATABASE & SEED ADMIN OTOMATIS
+    # [FITUR DARURAT] SETUP DATABASE
     # ==================================================================
-    # Akses URL ini di browser untuk membangun tabel & user admin
     @app.route('/setup-db-darurat')
     def setup_database_and_admin():
         try:
-            # A. Buat Semua Tabel (CREATE TABLE IF NOT EXISTS)
             db.create_all()
             status_msg = ["✅ Tabel Database berhasil dibangun/diperbarui."]
 
-            # B. Import Model di dalam fungsi (Lazy Import)
             from app.models import User, UserProfile
             
-            # C. Logika Seed Admin (Sama seperti seed_admin.py)
             admin_phone = "08123456789"
             existing_user = User.query.filter_by(phone=admin_phone).first()
 
             if existing_user:
-                status_msg.append(f"⚠️ User Admin {admin_phone} SUDAH ADA. Tidak perlu dibuat ulang.")
+                status_msg.append(f"⚠️ User Admin {admin_phone} SUDAH ADA.")
             else:
-                # 1. Buat User Baru
                 new_admin = User(
                     phone=admin_phone,
                     role="admin",
                     is_active=True,
                     is_verified=True
                 )
-                # 2. Hash Password (admin123)
                 new_admin.set_password("admin123")
-                
                 db.session.add(new_admin)
-                db.session.flush() # Flush agar ID user terbentuk
+                db.session.flush()
 
-                # 3. Buat User Profile
                 admin_profile = UserProfile(
                     user_id=new_admin.id,
                     full_name="Super Admin Vercel",
@@ -108,32 +98,30 @@ def create_app():
             return jsonify({
                 "status": "success", 
                 "details": status_msg,
-                "login_info": {
-                    "phone": admin_phone,
-                    "password": "admin123"
-                }
+                "login_info": {"phone": admin_phone, "password": "admin123"}
             })
             
         except Exception as e:
-            # Jika error, rollback transaksi database
             db.session.rollback()
-            return jsonify({
-                "status": "error", 
-                "message": f"Terjadi kesalahan saat setup database: {str(e)}"
-            }), 500
+            return jsonify({"status": "error", "message": f"Error: {str(e)}"}), 500
 
     # ==================================================================
-    # 4. REGISTER BLUEPRINTS (ROUTES)
+    # 4. REGISTER BLUEPRINTS (ROUTES) - [BAGIAN INI YANG DIPERBAIKI]
     # ==================================================================
     try:
-        # Sesuaikan dengan lokasi file route Auth Anda
+        # 1. Auth Routes
         from app.api.v1.auth import auth_bp
         app.register_blueprint(auth_bp, url_prefix='/api/v1/auth')
+        
+        # 2. Admin Routes (INI YANG TADI HILANG!)
+        from app.api.v1.admin import admin_bp
+        app.register_blueprint(admin_bp, url_prefix='/api/v1/admin')
+        
     except ImportError as e:
-        print(f"⚠️ Warning: Blueprint Auth belum terload: {e}")
+        print(f"⚠️ Warning: Blueprint Import Error: {e}")
 
     # ==================================================================
-    # 5. ROUTES DASAR (Health Check & Error Handler)
+    # 5. ROUTES DASAR
     # ==================================================================
     @app.errorhandler(404)
     def not_found(e):
@@ -147,7 +135,6 @@ def create_app():
     def index():
         return jsonify({'status': 'online', 'service': 'Lansia Care Backend'})
     
-    # Route untuk mengecek apakah DB connect
     @app.route('/api/v1/health')
     def health_check():
         try:
@@ -155,5 +142,5 @@ def create_app():
             return jsonify({'status': 'healthy', 'database': 'connected'})
         except Exception as e:
             return jsonify({'status': 'healthy', 'database': f'error: {str(e)}'})
-    #
+    
     return app
