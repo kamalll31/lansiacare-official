@@ -2,9 +2,13 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from datetime import datetime, timedelta
 import random
+import logging
 
 # Pastikan Anda sudah update models.py dengan tabel OTPSession
 from app.models import User, UserProfile, OTPSession, db
+
+# Setup Logger
+logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -32,10 +36,15 @@ def create_and_store_otp(phone, purpose='registration'):
     db.session.add(otp_session)
     db.session.commit()
     
+    # [PENTING] Print ke Log Server agar bisa dibaca di Dashboard Vercel
+    print(f"\n{'='*40}")
+    print(f"🔐 [OTP LOG] Phone: {phone} | CODE: {otp_code}")
+    print(f"{'='*40}\n")
+    
     return otp_code
 
 # ==========================================
-# 1. REGISTER (Updated: Secure & DB OTP)
+# 1. REGISTER (Updated: Handle Retry & Print OTP)
 # ==========================================
 @auth_bp.route('/register', methods=['POST'])
 def register():
@@ -45,14 +54,12 @@ def register():
         password = data.get('password')
         full_name = data.get('full_name', '')
         email = data.get('email')
+        role = data.get('role', 'lansia') # Default role
         
         # Validasi Input
         if not phone or not password:
             return jsonify({'success': False, 'error': 'Phone dan password diperlukan'}), 400
         
-        if not phone.isdigit():
-             return jsonify({'success': False, 'error': 'Nomor telepon harus angka'}), 400
-
         # Cek User Existing
         existing_user = User.query.filter_by(phone=phone).first()
         
@@ -60,48 +67,56 @@ def register():
             if existing_user.is_verified:
                 return jsonify({'success': False, 'error': 'Nomor sudah terdaftar'}), 400
             else:
-                # [SECURITY FIX] User ada tapi belum verified.
-                # Kita JANGAN ubah password dia disini (mencegah take over akun).
-                # Kita hanya kirim ulang OTP saja.
-                pass 
+                # [FIX LOGIC] User ada tapi belum verified -> IZINKAN DAFTAR ULANG
+                # Update password baru (jika user menggantinya)
+                existing_user.set_password(password)
+                
+                # Update nama profile (jika ada perubahan)
+                if existing_user.profile:
+                    existing_user.profile.full_name = full_name
+                else:
+                    # Jaga-jaga jika profil belum ada
+                    new_profile = UserProfile(user_id=existing_user.id, full_name=full_name)
+                    db.session.add(new_profile)
+                
+                db.session.commit()
+                # Kita gunakan existing_user untuk proses OTP selanjutnya
         else:
             # User Benar-benar Baru -> Buat User & Profile
-            user = User(
+            new_user = User(
                 phone=phone, 
                 email=email, 
-                role='lansia',
+                role=role,
                 is_verified=False, 
                 is_active=True
             )
-            user.set_password(password) # Password diset di awal
-            db.session.add(user)
+            new_user.set_password(password) # Password diset di awal
+            db.session.add(new_user)
             db.session.flush() # Flush untuk dapat ID
             
-            profile = UserProfile(user_id=user.id, full_name=full_name)
+            profile = UserProfile(user_id=new_user.id, full_name=full_name)
             db.session.add(profile)
             db.session.commit()
             
             # Update variabel existing_user agar bisa dipakai di bawah
-            existing_user = user
+            existing_user = new_user
         
-        # [NEW LOGIC] Generate OTP & Simpan ke DB
+        # [CORE] Generate OTP & Simpan ke DB
         otp_code = create_and_store_otp(phone, 'registration')
-        
-        # Debug print (Hanya muncul di log server, tidak dikirim ke user di production)
-        print(f"DEBUG OTP for {phone}: {otp_code}")
         
         return jsonify({
             'success': True,
             'message': 'Registrasi berhasil. Silakan verifikasi OTP.',
             'data': {
                 'user_id': existing_user.id,
-                'requires_otp': True,
-                # 'debug_otp': otp_code # Hapus baris ini saat production release
+                'phone': phone,
+                'requires_otp': True
             }
         }), 201
         
     except Exception as e:
         db.session.rollback()
+        print(f"ERROR REGISTER: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # ==========================================
@@ -146,18 +161,17 @@ def login():
         user.last_login = datetime.utcnow()
         db.session.commit()
         
-        # [FIX] Identity menggunakan ID (Integer), bukan String
         access_token = create_access_token(
             identity=user.id,
-            additional_claims=user.to_jwt_claims(), # Pastikan method ini ada di models.py
-            expires_delta=timedelta(days=7) # Token berlaku 7 hari
+            additional_claims=user.to_jwt_claims(),
+            expires_delta=timedelta(days=7)
         )
         
         return jsonify({
             'success': True,
             'message': 'Login berhasil',
             'token': access_token,
-            'user': user.to_dict() # Pastikan method ini ada di models.py
+            'user': user.to_dict()
         }), 200
 
     except Exception as e:
@@ -222,7 +236,6 @@ def verify_otp():
 @jwt_required()
 def get_current_user():
     current_user_id = get_jwt_identity()
-    # current_user_id sudah otomatis Integer jika saat create_token pakai Integer
     user = User.query.get(current_user_id)
     
     if not user:
