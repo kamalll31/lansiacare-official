@@ -43,8 +43,18 @@ class User(db.Model):
         if hasattr(self, 'profile') and self.profile: return self.profile.full_name
         return "User"
     
+    # [FIX KRUSIAL UNTUK FLUTTER]
+    # Menggunakan 'or ""' agar jika datanya Null di DB, dikirim sebagai String kosong.
+    # Ini mencegah error "type 'Null' is not a subtype of type 'String'"
     def to_dict(self):
-        return {'id': self.id, 'phone': self.phone, 'email': self.email, 'role': self.role, 'full_name': self.full_name, 'is_verified': self.is_verified}
+        return {
+            'id': self.id, 
+            'phone': self.phone or "", 
+            'email': self.email or "", 
+            'role': self.role or "keluarga", 
+            'full_name': self.full_name, 
+            'is_verified': self.is_verified
+        }
 
 class UserProfile(db.Model):
     __tablename__ = 'user_profiles'
@@ -242,7 +252,15 @@ class SystemLog(db.Model):
 def setup_relationships():
     User.profile = db.relationship('UserProfile', backref='user', uselist=False, cascade='all, delete-orphan')
     User.lansia_profile = db.relationship('LansiaProfile', backref='user', uselist=False, cascade='all, delete-orphan')
-    User.otp_sessions = db.relationship('OTPSession', primaryjoin='foreign(OTPSession.phone) == remote(User.phone)', lazy='dynamic', cascade='all, delete-orphan')
+    
+    # [FIX WARNING] Hapus 'remote()' agar tidak muncul warning di Log
+    User.otp_sessions = db.relationship(
+        'OTPSession', 
+        primaryjoin='foreign(OTPSession.phone) == User.phone', 
+        lazy='dynamic', 
+        cascade='all, delete-orphan'
+    )
+    
     User.content_items = db.relationship('ContentItem', backref='author', lazy='dynamic')
     User.activities = db.relationship('Activity', backref='creator', lazy='dynamic', foreign_keys='Activity.created_by')
     User.participations = db.relationship('ActivityParticipant', backref='user', lazy='dynamic')
