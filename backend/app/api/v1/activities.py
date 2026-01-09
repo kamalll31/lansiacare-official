@@ -12,7 +12,6 @@ activities_bp = Blueprint('activities', __name__)
 def get_activities():
     try:
         user_id = get_jwt_identity()
-        print(f"DEBUG: Getting activities for user {user_id}")
         
         # Get query parameters
         activity_type = request.args.get('type')
@@ -44,14 +43,21 @@ def get_activities():
         # Order by start time
         activities = query.order_by(Activity.start_time.asc()).all()
         
+        # [OPTIMISASI] Ambil ID kegiatan yang sudah diikuti user dalam satu query
+        joined_activity_ids = {
+            p.activity_id for p in ActivityParticipant.query.filter_by(user_id=user_id).all()
+        }
+        
         activities_data = []
         for activity in activities:
-            # Check if user is registered
-            user_participation = ActivityParticipant.query.filter_by(
-                activity_id=activity.id, 
-                user_id=user_id
-            ).first()
+            is_joined = activity.id in joined_activity_ids
             
+            # Ambil status spesifik jika joined
+            status = None
+            if is_joined:
+                part = ActivityParticipant.query.filter_by(activity_id=activity.id, user_id=user_id).first()
+                status = part.status if part else None
+
             activities_data.append({
                 'id': activity.id,
                 'title': activity.title,
@@ -63,13 +69,12 @@ def get_activities():
                 'max_participants': activity.max_participants,
                 'current_participants': activity.current_participants,
                 'is_recurring': activity.is_recurring,
-                'is_registered': user_participation is not None,
-                'registration_status': user_participation.status if user_participation else None,
-                'available_slots': activity.max_participants - activity.current_participants if activity.max_participants else None,
+                'is_registered': is_joined,
+                'registration_status': status,
+                'available_slots': (activity.max_participants - activity.current_participants) if activity.max_participants else None,
                 'created_by': activity.created_by
             })
         
-        print(f"DEBUG: Returning {len(activities_data)} activities")
         return jsonify({
             'success': True,
             'activities': activities_data
@@ -87,7 +92,6 @@ def get_activities():
 def get_upcoming_activities():
     try:
         user_id = get_jwt_identity()
-        print(f"DEBUG: Getting upcoming activities for user {user_id}")
         
         # Get activities in next 30 days where user is registered
         month_from_now = datetime.utcnow() + timedelta(days=30)
@@ -130,7 +134,6 @@ def get_upcoming_activities():
 def get_activity_detail(activity_id):
     try:
         user_id = get_jwt_identity()
-        print(f"DEBUG: Getting activity detail {activity_id} for user {user_id}")
         
         activity = Activity.query.get(activity_id)
         if not activity:
@@ -156,7 +159,7 @@ def get_activity_detail(activity_id):
             participants_data.append({
                 'user_id': participant.user_id,
                 'user_name': participant.user.profile.full_name if participant.user.profile else 'Unknown',
-                'registered_at': participant.registered_at.isoformat()
+                'registered_at': participant.registered_at.isoformat() if participant.registered_at else None
             })
         
         activity_data = {
@@ -172,7 +175,7 @@ def get_activity_detail(activity_id):
             'is_recurring': activity.is_recurring,
             'is_registered': user_participation is not None,
             'registration_status': user_participation.status if user_participation else None,
-            'available_slots': activity.max_participants - activity.current_participants if activity.max_participants else None,
+            'available_slots': (activity.max_participants - activity.current_participants) if activity.max_participants else None,
             'participants': participants_data,
             'created_by': activity.created_by
         }
@@ -194,7 +197,6 @@ def get_activity_detail(activity_id):
 def register_activity(activity_id):
     try:
         user_id = get_jwt_identity()
-        print(f"DEBUG: Registering user {user_id} for activity {activity_id}")
         
         activity = Activity.query.get(activity_id)
         if not activity:
@@ -217,22 +219,25 @@ def register_activity(activity_id):
         ).first()
         
         if existing_participation:
-            return jsonify({
-                'success': False,
-                'error': 'Anda sudah terdaftar di aktivitas ini'
-            }), 400
+            # Jika statusnya cancelled/batal, daftarkan ulang
+            if existing_participation.status == 'cancelled':
+                existing_participation.status = 'registered'
+                activity.current_participants += 1
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': 'Anda sudah terdaftar di aktivitas ini'
+                }), 400
+        else:
+            # Register user
+            participation = ActivityParticipant(
+                activity_id=activity_id,
+                user_id=user_id,
+                status='registered'
+            )
+            db.session.add(participation)
+            activity.current_participants += 1
         
-        # Register user
-        participation = ActivityParticipant(
-            activity_id=activity_id,
-            user_id=user_id,
-            status='registered'
-        )
-        
-        # Update participant count
-        activity.current_participants += 1
-        
-        db.session.add(participation)
         db.session.commit()
         
         return jsonify({
@@ -254,7 +259,6 @@ def register_activity(activity_id):
 def cancel_registration(activity_id):
     try:
         user_id = get_jwt_identity()
-        print(f"DEBUG: Cancelling registration for user {user_id} in activity {activity_id}")
         
         participation = ActivityParticipant.query.filter_by(
             activity_id=activity_id, 
@@ -269,11 +273,13 @@ def cancel_registration(activity_id):
         
         # Update participant count
         activity = Activity.query.get(activity_id)
-        if activity:
+        if activity and participation.status == 'registered':
             activity.current_participants = max(0, activity.current_participants - 1)
         
-        # Remove participation
-        db.session.delete(participation)
+        # Mark as cancelled instead of delete (optional, for history)
+        participation.status = 'cancelled'
+        # Jika ingin hapus permanen: db.session.delete(participation)
+        
         db.session.commit()
         
         return jsonify({
@@ -295,7 +301,6 @@ def cancel_registration(activity_id):
 def get_activity_stats():
     try:
         user_id = get_jwt_identity()
-        print(f"DEBUG: Getting activity stats for user {user_id}")
         
         # Total activities registered
         total_registered = ActivityParticipant.query.filter_by(
@@ -337,53 +342,40 @@ def get_activity_stats():
 def create_sample_activities():
     try:
         user_id = get_jwt_identity()
-        print(f"DEBUG: Creating sample activities for user {user_id}")
         
         sample_activities = [
             {
                 'title': 'Senam Lansia Sehat',
-                'description': 'Senam ringan untuk lansia dengan instruktur profesional. Cocok untuk semua tingkat kebugaran.',
+                'description': 'Senam ringan untuk lansia dengan instruktur profesional.',
                 'activity_type': 'kesehatan',
-                'location': 'Lapangan Kelurahan Merdeka, Jakarta Selatan',
+                'location': 'Lapangan Kelurahan Merdeka',
                 'start_time': datetime.utcnow() + timedelta(days=2, hours=10),
                 'end_time': datetime.utcnow() + timedelta(days=2, hours=12),
                 'max_participants': 20,
-                'current_participants': 8,
+                'current_participants': 0,
                 'is_recurring': True,
                 'recurrence_pattern': 'weekly'
             },
             {
-                'title': 'Kelompok Baca Buku',
-                'description': 'Diskusi buku dan berbagi cerita bersama komunitas lansia. Membaca buku "Senja di Jakarta".',
-                'activity_type': 'komunitas',
-                'location': 'Perpustakaan Kota, Jl. Merdeka No. 123',
-                'start_time': datetime.utcnow() + timedelta(days=5, hours=14),
-                'end_time': datetime.utcnow() + timedelta(days=5, hours=16),
-                'max_participants': 15,
-                'current_participants': 12,
-                'is_recurring': True,
-                'recurrence_pattern': 'biweekly'
-            },
-            {
                 'title': 'Pemeriksaan Kesehatan Gratis',
-                'description': 'Cek tekanan darah, gula darah, dan konsultasi kesehatan dengan dokter umum.',
+                'description': 'Cek tekanan darah dan gula darah gratis.',
                 'activity_type': 'kesehatan',
-                'location': 'Puskesmas Jakarta Selatan, Jl. Kesehatan No. 45',
+                'location': 'Puskesmas Jakarta Selatan',
                 'start_time': datetime.utcnow() + timedelta(days=7, hours=9),
                 'end_time': datetime.utcnow() + timedelta(days=7, hours=13),
                 'max_participants': 30,
-                'current_participants': 25,
+                'current_participants': 0,
                 'is_recurring': False
             },
             {
-                'title': 'Kerajinan Tangan Lansia',
-                'description': 'Membuat kerajinan dari bahan daur ulang. Dipandu oleh instruktur berpengalaman.',
-                'activity_type': 'komunitas',
-                'location': 'Balai Warga RT 05, Jakarta Pusat',
+                'title': 'Kerajinan Tangan',
+                'description': 'Membuat kerajinan dari bahan daur ulang.',
+                'activity_type': 'keterampilan',
+                'location': 'Balai Warga',
                 'start_time': datetime.utcnow() + timedelta(days=10, hours=13),
                 'end_time': datetime.utcnow() + timedelta(days=10, hours=15),
                 'max_participants': 12,
-                'current_participants': 6,
+                'current_participants': 0,
                 'is_recurring': True,
                 'recurrence_pattern': 'monthly'
             }
@@ -394,7 +386,7 @@ def create_sample_activities():
             # Check if activity already exists
             existing_activity = Activity.query.filter_by(
                 title=activity_data['title'],
-                start_time=activity_data['start_time']
+                # start_time=activity_data['start_time'] # Skip check time for dev ease
             ).first()
             
             if not existing_activity:
@@ -420,12 +412,10 @@ def create_sample_activities():
         return jsonify({
             'success': True,
             'message': f'{len(created_activities)} sample activities created successfully',
-            'activities_created': [activity.title for activity in created_activities]
         }), 201
         
     except Exception as e:
         db.session.rollback()
-        print(f"DEBUG: Error in create_sample_activities: {str(e)}")
         return jsonify({
             'success': False,
             'error': str(e)

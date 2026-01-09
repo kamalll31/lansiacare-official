@@ -36,13 +36,12 @@ class User(db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
-    # [FIX 1: TOKEN] Pastikan tidak ada Null di dalam Token
     def to_jwt_claims(self):
         return {
             'phone': self.phone or "", 
             'role': self.role or "keluarga", 
             'is_verified': self.is_verified, 
-            'email': self.email or "" # <--- PENTING! Ganti Null jadi String kosong
+            'email': self.email or "" 
         }
     
     @hybrid_property
@@ -50,12 +49,11 @@ class User(db.Model):
         if hasattr(self, 'profile') and self.profile: return self.profile.full_name
         return "User"
     
-    # [FIX 2: RESPONSE BODY] Pastikan tidak ada Null di data JSON
     def to_dict(self):
         return {
             'id': self.id, 
             'phone': self.phone or "", 
-            'email': self.email or "", # <--- PENTING! Ganti Null jadi String kosong
+            'email': self.email or "", 
             'role': self.role or "keluarga", 
             'full_name': self.full_name, 
             'is_verified': self.is_verified
@@ -132,13 +130,12 @@ class ContentItem(db.Model):
     thumbnail_url = db.Column(db.String(500))
     media_url = db.Column(db.String(500))
     embed_url = db.Column(db.String(500))
-    embed_provider = db.Column(db.String(50)) # youtube, spotify, etc
+    embed_provider = db.Column(db.String(50))
     embed_id = db.Column(db.String(100))
     embed_type = db.Column(db.String(50))
     embed_code = db.Column(db.Text)
     duration = db.Column(db.Integer)
     
-    # Accessibility & Metadata
     is_audio_only = db.Column(db.Boolean, default=False)
     has_subtitles = db.Column(db.Boolean, default=False)
     has_transcript = db.Column(db.Boolean, default=False)
@@ -176,7 +173,6 @@ class ContentItem(db.Model):
             'created_at': self.created_at.isoformat()
         }
     
-    # Helper methods for Frontend
     def _get_category_display(self):
         return self.category.replace('_', ' ').title()
     
@@ -206,15 +202,25 @@ class UrlAnalysis(db.Model):
     content_items = db.relationship('ContentItem', backref='url_analysis', lazy='dynamic')
 
 # ==============================================================================
-# 4. ACTIVITY & LOGS MODELS
+# 4. ACTIVITY & LOGS MODELS (DIPERBARUI UNTUK MENDUKUNG ACTIVITIES.PY)
 # ==============================================================================
 class Activity(db.Model):
     __tablename__ = 'activities'
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text)
-    scheduled_at = db.Column(db.DateTime, nullable=False, index=True)
-    location = db.Column(db.String(200)) 
+    location = db.Column(db.String(200))
+    
+    # [KOLOM BARU] Sesuai dengan activities.py Anda
+    activity_type = db.Column(db.String(50), default='umum') 
+    start_time = db.Column(db.DateTime, nullable=False, index=True) 
+    end_time = db.Column(db.DateTime)
+    max_participants = db.Column(db.Integer)
+    current_participants = db.Column(db.Integer, default=0)
+    is_recurring = db.Column(db.Boolean, default=False)
+    recurrence_pattern = db.Column(db.String(50))
+    is_active = db.Column(db.Boolean, default=True)
+    
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -223,8 +229,8 @@ class ActivityParticipant(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     activity_id = db.Column(db.Integer, db.ForeignKey('activities.id', ondelete='CASCADE'))
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'))
-    status = db.Column(db.String(20), default='joined') 
-    joined_at = db.Column(db.DateTime, default=datetime.utcnow)
+    status = db.Column(db.String(20), default='registered') 
+    registered_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class ContentConsumption(db.Model):
     __tablename__ = 'content_consumption'
@@ -234,8 +240,6 @@ class ContentConsumption(db.Model):
     progress_seconds = db.Column(db.Integer, default=0) 
     is_finished = db.Column(db.Boolean, default=False)
     last_accessed = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    # Metadata tambahan untuk analisis
     consumption_type = db.Column(db.String(20), default='view')
     start_time = db.Column(db.DateTime)
     end_time = db.Column(db.DateTime)
@@ -257,12 +261,14 @@ class SystemLog(db.Model):
 def setup_relationships():
     User.profile = db.relationship('UserProfile', backref='user', uselist=False, cascade='all, delete-orphan')
     User.lansia_profile = db.relationship('LansiaProfile', backref='user', uselist=False, cascade='all, delete-orphan')
+    
     User.otp_sessions = db.relationship(
         'OTPSession', 
         primaryjoin='foreign(OTPSession.phone) == User.phone', 
         lazy='dynamic', 
         cascade='all, delete-orphan'
     )
+    
     User.content_items = db.relationship('ContentItem', backref='author', lazy='dynamic')
     User.activities = db.relationship('Activity', backref='creator', lazy='dynamic', foreign_keys='Activity.created_by')
     User.participations = db.relationship('ActivityParticipant', backref='user', lazy='dynamic')
@@ -270,5 +276,8 @@ def setup_relationships():
     
     ContentItem.transcripts = db.relationship('ContentTranscript', backref='content_item', lazy='dynamic', cascade='all, delete-orphan')
     ContentItem.consumptions = db.relationship('ContentConsumption', backref='content_item', lazy='dynamic', cascade='all, delete-orphan')
+    
+    # Activity Relationships
+    Activity.participants = db.relationship('ActivityParticipant', backref='activity', lazy='dynamic', cascade='all, delete-orphan')
 
 setup_relationships()
