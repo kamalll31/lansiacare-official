@@ -1,8 +1,8 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
-# [FIX] Hapus EmergencyContact dari import karena modelnya tidak ada di database saat ini
-from app.models import User, UserProfile, Activity, FamilyConnection, ContentItem, SystemLog
+# [FIX]: EmergencyContact sudah aman diimport
+from app.models import User, UserProfile, Activity, FamilyConnection, ContentItem, SystemLog, EmergencyContact
 from datetime import datetime, timedelta
 from sqlalchemy import or_
 
@@ -14,7 +14,7 @@ def is_admin(user_id):
     return user and user.role == 'admin'
 
 # ==============================
-# DASHBOARD & STATS (SEMUA FUNGSI DIPERTAHANKAN)
+# DASHBOARD & STATS
 # ==============================
 @admin_bp.route('/dashboard/stats', methods=['GET'])
 # @jwt_required() # Uncomment jika frontend sudah kirim token
@@ -31,7 +31,6 @@ def get_dashboard_stats():
         total_activities = Activity.query.count()
         
         # [ADAPTASI DB] SystemLog pakai 'action', bukan 'log_type'
-        # Kita cari log yang mengandung kata 'EMERGENCY'
         total_emergencies = SystemLog.query.filter(SystemLog.action.ilike('%EMERGENCY%')).count()
         
         # User aktif 24 jam terakhir
@@ -44,10 +43,9 @@ def get_dashboard_stats():
         # Statistik konten
         total_content = ContentItem.query.count()
         
-        # [ADAPTASI DB] EmergencyContact belum ada tabelnya
-        # Kita set 0 agar kode tidak crash, tapi variabel tetap ada (biar frontend aman)
-        total_emergency_contacts = 0
-        users_with_emergency_contacts = 0
+        # [FIX]: Sekarang bisa hitung real dari database karena model sudah ada
+        total_emergency_contacts = EmergencyContact.query.count()
+        users_with_emergency_contacts = db.session.query(EmergencyContact.lansia_user_id).distinct().count()
         
         # [ADAPTASI DB] FamilyConnection pakai status='approved' bukan is_verified
         total_family_connections = FamilyConnection.query.filter_by(status='approved').count()
@@ -138,8 +136,8 @@ def get_user_detail(user_id):
         user = User.query.get_or_404(user_id)
         
         activities_count = Activity.query.filter_by(created_by=user_id).count()
-        # [ADAPTASI DB] Set 0 karena tabel belum ada
-        emergency_contacts_count = 0 
+        # [FIX]: Hitung real contact
+        emergency_contacts_count = EmergencyContact.query.filter_by(lansia_user_id=user.id).count()
         
         user_data = {
             'id': user.id,
@@ -217,4 +215,4 @@ def get_recent_emergencies():
             
         return jsonify({'success': True, 'emergencies': data}), 200
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500#
+        return jsonify({'success': False, 'error': str(e)}), 500

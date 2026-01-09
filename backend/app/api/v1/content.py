@@ -6,6 +6,7 @@ import os
 import uuid
 from werkzeug.utils import secure_filename
 from app import db
+# [FIX]: Import model lengkap sesuai models/__init__.py yang baru
 from app.models import ContentItem, ContentTranscript, ContentConsumption, User
 from app.services.content_service import ContentMetadataService
 import json
@@ -24,7 +25,6 @@ def allowed_file(filename):
 def parse_iso_datetime(date_str):
     """
     Helper untuk menangani format tanggal dari Flutter (ISO 8601 dengan 'Z')
-    Python < 3.11 tidak support 'Z' di fromisoformat
     """
     if not date_str:
         return None
@@ -75,7 +75,7 @@ def upload_media():
             # 4. Generate URL Publik
             file_url = url_for('static', filename=f'uploads/{unique_filename}', _external=True)
             
-            # [FIX] Paksa HTTPS jika di environment production (PythonAnywhere)
+            # [FIX] Paksa HTTPS jika di environment production
             if 'pythonanywhere' in request.host and file_url.startswith('http:'):
                 file_url = file_url.replace('http:', 'https:')
             
@@ -195,7 +195,6 @@ def get_content_detail(content_id):
     """Get single content detail"""
     try:
         user_id = request.args.get('user_id', type=int)
-        
         content = ContentItem.query.get_or_404(content_id)
         
         if not content.is_published:

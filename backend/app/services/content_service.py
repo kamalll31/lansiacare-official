@@ -29,7 +29,6 @@ class ContentMetadataService:
         url = url.strip()
         
         # 1. Normalisasi URL (tambahkan https jika tidak ada)
-        # Ini penting agar urlparse bekerja dengan benar pada input 'www.youtube.com...'
         if not url.startswith(('http://', 'https://')):
             url = 'https://' + url
 
@@ -57,7 +56,6 @@ class ContentMetadataService:
             logger.warning(f"URLParse failed, switching to Regex fallback: {e}")
 
         # 3. Fallback Regex Master (Jaring Pengaman Terakhir)
-        # Menangkap pola 11 karakter ID di berbagai posisi umum
         patterns = [
             r'(?:v=|/)([0-9A-Za-z_-]{11})(?:[?&/]|$)',  # Menangkap setelah v= atau /
             r'(?:youtu\.be/|embed/|shorts/)([0-9A-Za-z_-]{11})', # Format path khusus
@@ -73,7 +71,6 @@ class ContentMetadataService:
     @staticmethod
     def extract_spotify_id(url: str) -> Optional[Tuple[str, str]]:
         """Extract Spotify type dan ID"""
-        # Support format: open.spotify.com/type/id atau spoti.fi/id (resolved)
         pattern = r'(?:open\.spotify\.com|spoti\.fi)/(track|episode|playlist|album|show)/([a-zA-Z0-9]+)'
         match = re.search(pattern, url, re.IGNORECASE)
         if match:
@@ -126,7 +123,6 @@ class ContentMetadataService:
             return result
 
         # --- 1. YOUTUBE ---
-        # Cek domain youtube/youtu.be (case insensitive)
         if 'youtu' in url.lower():
             yt_id = ContentMetadataService.extract_youtube_video_id(url)
             
