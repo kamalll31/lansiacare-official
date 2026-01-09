@@ -66,7 +66,7 @@ def create_app():
     def setup_database_and_admin():
         try:
             # [CRITICAL] Hapus tabel lama yang strukturnya salah
-            #db.drop_all() 
+            db.drop_all() 
             
             # Buat tabel baru yang bersih dan sesuai models terbaru
             db.create_all()
