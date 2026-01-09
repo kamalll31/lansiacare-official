@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {
-  // [FIX] URL sudah diganti ke PythonAnywhere (Cloud)
+  // [FIX] URL sudah benar (Vercel)
   static const String baseUrl = 'https://lansiacare-backend.vercel.app/api/v1';
   
   static Future<Map<String, dynamic>> register({
@@ -24,15 +24,18 @@ class AuthService {
         }),
       );
       
+      print("REGISTER RESPONSE: ${response.body}"); // Debugging
+
       if (response.statusCode == 201) {
         return {
           'success': true,
           'data': json.decode(response.body),
         };
       } else {
+        final errorData = json.decode(response.body);
         return {
           'success': false,
-          'error': json.decode(response.body)['error'],
+          'error': errorData['error'] ?? 'Registrasi gagal',
         };
       }
     } catch (e) {
@@ -57,23 +60,31 @@ class AuthService {
         }),
       );
       
+      print("OTP RESPONSE: ${response.body}"); // Debugging
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         
         // Save token to shared preferences
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('access_token', data['access_token']);
-        // Pastikan data['user'] di-encode ke string sebelum disimpan
-        await prefs.setString('user_data', json.encode(data['user']));
+        
+        // [FIX KRUSIAL] Backend kirim 'token', bukan 'access_token'
+        // Jika token null, simpan string kosong agar tidak error
+        await prefs.setString('access_token', data['token']?.toString() ?? ""); 
+        
+        if (data['user'] != null) {
+           await prefs.setString('user_data', json.encode(data['user']));
+        }
         
         return {
           'success': true,
           'data': data,
         };
       } else {
+        final errorData = json.decode(response.body);
         return {
           'success': false,
-          'error': json.decode(response.body)['error'],
+          'error': errorData['error'] ?? 'Verifikasi gagal',
         };
       }
     } catch (e) {
@@ -98,21 +109,25 @@ class AuthService {
         }),
       );
       
+      print("LOGIN RESPONSE: ${response.body}"); // Debugging
+      
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         
-        // Save token to shared preferences
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('access_token', data['access_token']);
-        await prefs.setString('user_data', json.encode(data['user']));
+        
+        // [FIX KRUSIAL] Backend kirim 'token', bukan 'access_token'
+        await prefs.setString('access_token', data['token']?.toString() ?? "");
+        
+        if (data['user'] != null) {
+          await prefs.setString('user_data', json.encode(data['user']));
+        }
         
         return {
           'success': true,
           'data': data,
         };
       } else {
-        // Handle error response dari backend
-        // Biasanya error message ada di key 'error' atau 'message'
         final errorBody = json.decode(response.body);
         return {
           'success': false,
@@ -130,7 +145,7 @@ class AuthService {
   static Future<bool> isLoggedIn() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('access_token');
-    return token != null;
+    return token != null && token.isNotEmpty; // Cek token tidak kosong
   }
   
   static Future<void> logout() async {
