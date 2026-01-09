@@ -43,14 +43,12 @@ class User(db.Model):
         if hasattr(self, 'profile') and self.profile: return self.profile.full_name
         return "User"
     
-    # [FIX KRUSIAL UNTUK FLUTTER]
-    # Menggunakan 'or ""' agar jika datanya Null di DB, dikirim sebagai String kosong.
-    # Ini mencegah error "type 'Null' is not a subtype of type 'String'"
+    # [FIX KRUSIAL] Mengubah Null menjadi String Kosong "" agar Flutter tidak Crash
     def to_dict(self):
         return {
             'id': self.id, 
             'phone': self.phone or "", 
-            'email': self.email or "", 
+            'email': self.email or "",  # <--- INI OBATNYA
             'role': self.role or "keluarga", 
             'full_name': self.full_name, 
             'is_verified': self.is_verified
@@ -253,7 +251,7 @@ def setup_relationships():
     User.profile = db.relationship('UserProfile', backref='user', uselist=False, cascade='all, delete-orphan')
     User.lansia_profile = db.relationship('LansiaProfile', backref='user', uselist=False, cascade='all, delete-orphan')
     
-    # [FIX WARNING] Hapus 'remote()' agar tidak muncul warning di Log
+    # [FIX] Hapus 'remote()' agar log Vercel bersih dari warning
     User.otp_sessions = db.relationship(
         'OTPSession', 
         primaryjoin='foreign(OTPSession.phone) == User.phone', 
