@@ -35,20 +35,27 @@ class User(db.Model):
         self.password_hash = generate_password_hash(password)
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+    # [FIX 1: TOKEN] Pastikan tidak ada Null di dalam Token
     def to_jwt_claims(self):
-        return {'phone': self.phone, 'role': self.role, 'is_verified': self.is_verified, 'email': self.email}
+        return {
+            'phone': self.phone or "", 
+            'role': self.role or "keluarga", 
+            'is_verified': self.is_verified, 
+            'email': self.email or "" # <--- PENTING! Ganti Null jadi String kosong
+        }
     
     @hybrid_property
     def full_name(self):
         if hasattr(self, 'profile') and self.profile: return self.profile.full_name
         return "User"
     
-    # [FIX KRUSIAL] Mengubah Null menjadi String Kosong "" agar Flutter tidak Crash
+    # [FIX 2: RESPONSE BODY] Pastikan tidak ada Null di data JSON
     def to_dict(self):
         return {
             'id': self.id, 
             'phone': self.phone or "", 
-            'email': self.email or "",  # <--- INI OBATNYA
+            'email': self.email or "", # <--- PENTING! Ganti Null jadi String kosong
             'role': self.role or "keluarga", 
             'full_name': self.full_name, 
             'is_verified': self.is_verified
@@ -250,15 +257,12 @@ class SystemLog(db.Model):
 def setup_relationships():
     User.profile = db.relationship('UserProfile', backref='user', uselist=False, cascade='all, delete-orphan')
     User.lansia_profile = db.relationship('LansiaProfile', backref='user', uselist=False, cascade='all, delete-orphan')
-    
-    # [FIX] Hapus 'remote()' agar log Vercel bersih dari warning
     User.otp_sessions = db.relationship(
         'OTPSession', 
         primaryjoin='foreign(OTPSession.phone) == User.phone', 
         lazy='dynamic', 
         cascade='all, delete-orphan'
     )
-    
     User.content_items = db.relationship('ContentItem', backref='author', lazy='dynamic')
     User.activities = db.relationship('Activity', backref='creator', lazy='dynamic', foreign_keys='Activity.created_by')
     User.participations = db.relationship('ActivityParticipant', backref='user', lazy='dynamic')
