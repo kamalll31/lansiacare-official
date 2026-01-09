@@ -60,40 +60,41 @@ def create_app():
          })
 
     # ==================================================================
-    # [FITUR DARURAT] SETUP DATABASE
+    # [FITUR DARURAT] SETUP DATABASE & RESET TOTAL
     # ==================================================================
     @app.route('/setup-db-darurat')
     def setup_database_and_admin():
         try:
+            # [CRITICAL] Hapus tabel lama yang strukturnya salah
+            db.drop_all() 
+            
+            # Buat tabel baru yang bersih dan sesuai models terbaru
             db.create_all()
-            status_msg = ["✅ Tabel Database berhasil dibangun/diperbarui."]
+            status_msg = ["♻️ Database berhasil DI-RESET dan DIBANGUN ULANG."]
 
             from app.models import User, UserProfile
             
             admin_phone = "08123456789"
-            existing_user = User.query.filter_by(phone=admin_phone).first()
+            
+            # Buat Admin Baru (Pasti belum ada karena db habis di-reset)
+            new_admin = User(
+                phone=admin_phone,
+                role="admin",
+                is_active=True,
+                is_verified=True
+            )
+            new_admin.set_password("admin123")
+            db.session.add(new_admin)
+            db.session.flush()
 
-            if existing_user:
-                status_msg.append(f"⚠️ User Admin {admin_phone} SUDAH ADA.")
-            else:
-                new_admin = User(
-                    phone=admin_phone,
-                    role="admin",
-                    is_active=True,
-                    is_verified=True
-                )
-                new_admin.set_password("admin123")
-                db.session.add(new_admin)
-                db.session.flush()
-
-                admin_profile = UserProfile(
-                    user_id=new_admin.id,
-                    full_name="Super Admin Vercel",
-                    address="Kantor Pusat Lansia Care (Cloud)"
-                )
-                db.session.add(admin_profile)
-                db.session.commit()
-                status_msg.append(f"🚀 User Admin {admin_phone} BERHASIL DIBUAT!")
+            admin_profile = UserProfile(
+                user_id=new_admin.id,
+                full_name="Super Admin Vercel",
+                address="Kantor Pusat Lansia Care (Cloud)"
+            )
+            db.session.add(admin_profile)
+            db.session.commit()
+            status_msg.append(f"🚀 User Admin {admin_phone} BERHASIL DIBUAT ULANG!")
 
             return jsonify({
                 "status": "success", 
@@ -106,16 +107,20 @@ def create_app():
             return jsonify({"status": "error", "message": f"Error: {str(e)}"}), 500
 
     # ==================================================================
-    # 4. REGISTER BLUEPRINTS (ROUTES) - [BAGIAN INI YANG DIPERBAIKI]
+    # 4. REGISTER BLUEPRINTS (ROUTES)
     # ==================================================================
     try:
         # 1. Auth Routes
         from app.api.v1.auth import auth_bp
         app.register_blueprint(auth_bp, url_prefix='/api/v1/auth')
         
-        # 2. Admin Routes (INI YANG TADI HILANG!)
+        # 2. Admin Routes
         from app.api.v1.admin import admin_bp
         app.register_blueprint(admin_bp, url_prefix='/api/v1/admin')
+
+        # 3. Content Routes (SOLUSI 404 KONTEN)
+        from app.api.v1.content import content_bp
+        app.register_blueprint(content_bp, url_prefix='/api/v1/content')
         
     except ImportError as e:
         print(f"⚠️ Warning: Blueprint Import Error: {e}")
