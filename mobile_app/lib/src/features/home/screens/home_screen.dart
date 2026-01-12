@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:lansiacare/src/shared/services/auth_service.dart';
 import 'package:lansiacare/src/shared/services/api_service.dart';
 import 'package:lansiacare/src/shared/services/emergency_service.dart';
+// IMPORT SERVICE MONITORING (WAJIB ADA)
+import 'package:lansiacare/src/shared/services/sos_monitor_service.dart'; 
 import 'package:lansiacare/src/features/emergency/screens/emergency_contacts_screen.dart';
 import 'package:lansiacare/src/features/profile/screens/profile_screen.dart';
 import 'package:lansiacare/src/features/activities/screens/activities_screen.dart';
@@ -26,6 +28,21 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadUserData();
+    
+    // ==========================================================
+    // 1. MULAI MONITORING SOS OTOMATIS (ACTIVE INTERRUPTION)
+    // ==========================================================
+    // Ini akan mengecek status bahaya setiap 10 detik
+    SOSMonitorService.startMonitoring(context);
+  }
+
+  @override
+  void dispose() {
+    // ==========================================================
+    // 2. MATIKAN MONITORING SAAT KELUAR HALAMAN
+    // ==========================================================
+    SOSMonitorService.stopMonitoring();
+    super.dispose();
   }
 
   Future<void> _loadUserData() async {
@@ -68,7 +85,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Animated Logo/Icon
             Container(
               width: 80,
               height: 80,
@@ -90,8 +106,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            
-            // Loading Indicator dengan animasi
             SizedBox(
               width: 40,
               height: 40,
@@ -101,8 +115,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            
-            // Loading Text
             Text(
               'Memuat aplikasi...',
               style: TextStyle(
@@ -112,8 +124,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 8),
-            
-            // App Name dengan styling yang bagus
             Text(
               'Lansia Care',
               style: TextStyle(
@@ -124,8 +134,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 4),
-            
-            // Subtitle
             Text(
               'Kesejahteraan Lansia Indonesia',
               style: TextStyle(
@@ -135,8 +143,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 30),
-            
-            // Loading dots animation
             _buildLoadingDots(),
           ],
         ),
@@ -402,27 +408,72 @@ class _HomeScreenState extends State<HomeScreen> {
               _buildActionButton(
                   icon: Icons.article,
                   label: 'Info Terkini',
-                  color: Colors.blue),
+                  color: Colors.blue,
+                  onTap: () {
+                     // TODO: Ke halaman Info
+                     ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Fitur Info akan hadir')),
+                    );
+                  }
+              ),
               _buildActionButton(
                   icon: Icons.local_hospital,
                   label: 'Layanan Terdekat',
-                  color: Colors.green),
+                  color: Colors.green,
+                  onTap: () {
+                    // PINDAH KE TAB LAYANAN (Index 2)
+                    setState(() {
+                      _currentIndex = 2; 
+                    });
+                  }
+              ),
               _buildActionButton(
                   icon: Icons.calendar_today,
                   label: 'Kegiatan',
-                  color: Colors.orange),
+                  color: Colors.orange,
+                  onTap: () {
+                    // PINDAH KE TAB KEGIATAN (Index 1)
+                     setState(() {
+                      _currentIndex = 1; 
+                    });
+                  }
+              ),
               _buildActionButton(
                   icon: Icons.contacts,
                   label: 'Kontak Darurat',
-                  color: Colors.purple),
+                  color: Colors.purple,
+                  onTap: () {
+                    // BUKA HALAMAN KONTAK
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const EmergencyContactsScreen(),
+                      ),
+                    );
+                  }
+              ),
               _buildActionButton(
                   icon: Icons.medical_services,
                   label: 'Pengingat Obat',
-                  color: Colors.red),
+                  color: Colors.red,
+                   onTap: () {
+                     // TODO: Ke halaman Obat
+                     ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Fitur Obat akan hadir')),
+                    );
+                  }
+              ),
               _buildActionButton(
                   icon: Icons.group,
                   label: 'Komunitas',
-                  color: Colors.teal),
+                  color: Colors.teal,
+                   onTap: () {
+                     // TODO: Ke halaman Komunitas
+                     ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Fitur Komunitas akan hadir')),
+                    );
+                  }
+              ),
             ],
           ),
 
@@ -665,6 +716,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);
+              // MATIKAN MONITORING
+              SOSMonitorService.stopMonitoring();
+              
               await AuthService.logout();
               Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
             },
@@ -679,10 +733,12 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // UPDATED: Menambahkan parameter onTap
   Widget _buildActionButton({
     required IconData icon,
     required String label,
     required Color color,
+    required VoidCallback onTap, // Aksi saat diklik
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -700,14 +756,7 @@ class _HomeScreenState extends State<HomeScreen> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('$label diklik - Fitur akan segera hadir'),
-                duration: const Duration(milliseconds: 1000),
-              ),
-            );
-          },
+          onTap: onTap, // Gunakan aksi yang dikirim
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
@@ -733,7 +782,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // ========== ENHANCED LOADING & ERROR HANDLING ==========
     if (_isLoading) {
       return _buildLoadingScreen();
     }
@@ -759,7 +807,7 @@ class _HomeScreenState extends State<HomeScreen> {
           type: BottomNavigationBarType.fixed,
           selectedFontSize: 14,
           unselectedFontSize: 14,
-          selectedItemColor: const Color(0xFF1565C0), // Static blue color instead of Colors.blue[800]
+          selectedItemColor: const Color(0xFF1565C0), 
           unselectedItemColor: Colors.grey[600],
           backgroundColor: Colors.white,
           currentIndex: _currentIndex,
@@ -768,25 +816,25 @@ class _HomeScreenState extends State<HomeScreen> {
               _currentIndex = index;
             });
           },
-          items: const [ // REMOVED 'const' keyword
+          items: const [
             BottomNavigationBarItem(
               icon: Icon(Icons.home),
-              activeIcon: Icon(Icons.home, color: Color(0xFF1565C0)), // Static color
+              activeIcon: Icon(Icons.home, color: Color(0xFF1565C0)),
               label: 'Beranda',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.calendar_today),
-              activeIcon: Icon(Icons.calendar_today, color: Color(0xFF1565C0)), // Static color
+              activeIcon: Icon(Icons.calendar_today, color: Color(0xFF1565C0)),
               label: 'Kegiatan',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.local_hospital),
-              activeIcon: Icon(Icons.local_hospital, color: Color(0xFF1565C0)), // Static color
+              activeIcon: Icon(Icons.local_hospital, color: Color(0xFF1565C0)),
               label: 'Layanan',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.person),
-              activeIcon: Icon(Icons.person, color: Color(0xFF1565C0)), // Static color
+              activeIcon: Icon(Icons.person, color: Color(0xFF1565C0)),
               label: 'Profil',
             ),
           ],
