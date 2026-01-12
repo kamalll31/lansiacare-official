@@ -11,7 +11,7 @@ class ApiService {
   // ===========================================================================
   
   // Ganti FALSE jika ingin tes ke server Vercel (Produksi)
-  static const bool useLocalhost = true; 
+  static const bool useLocalhost = false; 
 
   static String get baseUrl {
     if (!useLocalhost) {
