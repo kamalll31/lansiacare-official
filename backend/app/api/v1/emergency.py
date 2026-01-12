@@ -15,14 +15,14 @@ emergency_bp = Blueprint('emergency', __name__)
 def get_emergency_contacts():
     try:
         current_user_id = get_jwt_identity()
-        # Menggunakan 'user_id' sesuai model, bukan 'lansia_user_id'
+        # [FIX] Filter by user_id
         contacts = EmergencyContact.query.filter_by(user_id=current_user_id).order_by(EmergencyContact.is_primary.desc()).all()
         
         contacts_data = []
         for contact in contacts:
             contacts_data.append({
                 'id': contact.id,
-                'contactName': contact.name, # DB: name, API JSON: contactName
+                'contactName': contact.name, # [FIX] DB uses 'name', API sends 'contactName'
                 'phone': contact.phone,
                 'relationship': contact.relationship,
                 'isPrimary': contact.is_primary,
@@ -42,19 +42,19 @@ def add_emergency_contact():
         current_user_id = get_jwt_identity()
         data = request.get_json()
         
-        # Validasi Input (Frontend kirim 'contactName', Backend terima)
+        # [FIX] Validate 'contactName' from frontend
         if not data.get('contactName') or not data.get('phone'):
             return jsonify({'error': 'Nama dan telepon kontak diperlukan'}), 400
         
-        # Jika Primary, reset yang lain
+        # Reset primary if needed
         if data.get('isPrimary'):
             EmergencyContact.query.filter_by(user_id=current_user_id).update({'is_primary': False})
             db.session.commit()
         
-        # [FIX UTAMA] Mapping 'contactName' (JSON) ke 'name' (DB Column)
+        # [FIX] Use 'name' for DB column
         contact = EmergencyContact(
             user_id=current_user_id,
-            name=data['contactName'], # <--- PENTING: Kolom DB adalah 'name'
+            name=data['contactName'], 
             phone=data['phone'],
             relationship=data.get('relationship', 'Keluarga'),
             is_primary=data.get('isPrimary', False)
@@ -89,9 +89,9 @@ def update_emergency_contact(contact_id):
             EmergencyContact.query.filter_by(user_id=current_user_id).update({'is_primary': False})
             db.session.commit()
         
-        # Update fields
+        # [FIX] Update fields correctly
         if 'contactName' in data:
-            contact.name = data['contactName'] # Mapping JSON -> DB
+            contact.name = data['contactName']
         if 'phone' in data:
             contact.phone = data['phone']
         if 'relationship' in data:
@@ -134,16 +134,16 @@ def get_contacts_stats():
         primary = EmergencyContact.query.filter_by(user_id=current_user_id, is_primary=True).first()
         
         return jsonify({
-            'totalContacts': total, # CamelCase agar konsisten dengan Flutter
+            'totalContacts': total,
             'hasPrimary': primary is not None,
-            'primaryName': primary.name if primary else None
+            'primaryName': primary.name if primary else None # [FIX] use .name
         }), 200
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 # ==============================================================================
-# LOGIKA SOS & MONITORING (SUDAH BENAR)
+# LOGIKA SOS & MONITORING
 # ==============================================================================
 
 @emergency_bp.route('/sos', methods=['POST'])
@@ -168,10 +168,10 @@ def trigger_sos():
         )
         db.session.add(new_log)
         
-        # 2. CARI KONTAK (Hybrid: App Family + Manual Contacts)
         sos_targets = []
 
         # A. Keluarga (App User)
+        # [FIX] Use lansia_user_id here (correct for FamilyConnection)
         family_conns = FamilyConnection.query.filter_by(
             lansia_user_id=user_id, 
             is_verified=True
@@ -188,12 +188,13 @@ def trigger_sos():
                 })
 
         # B. Kontak Manual
+        # [FIX] Use user_id here (correct for EmergencyContact)
         manual_contacts = EmergencyContact.query.filter_by(user_id=user_id).all()
         
         for contact in manual_contacts:
             sos_targets.append({
                 'source': 'manual_contact',
-                'name': contact.name,
+                'name': contact.name, # [FIX] use .name
                 'phone': contact.phone,
                 'is_primary': contact.is_primary
             })
@@ -221,7 +222,6 @@ def check_family_alert():
     try:
         family_user_id = get_jwt_identity()
         
-        # Cari Lansia yg terhubung
         connections = FamilyConnection.query.filter_by(
             family_user_id=family_user_id, 
             is_verified=True
@@ -231,7 +231,6 @@ def check_family_alert():
             return jsonify({'status': 'safe', 'message': 'Tidak ada lansia terhubung'}), 200
 
         active_alerts = []
-        # Cek SOS dalam 5 menit terakhir
         time_threshold = datetime.datetime.utcnow() - datetime.timedelta(minutes=5)
         
         for conn in connections:
