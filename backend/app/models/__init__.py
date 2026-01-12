@@ -202,7 +202,7 @@ class UrlAnalysis(db.Model):
     content_items = db.relationship('ContentItem', backref='url_analysis', lazy='dynamic')
 
 # ==============================================================================
-# 4. ACTIVITY & LOGS MODELS (DIPERBARUI UNTUK MENDUKUNG ACTIVITIES.PY)
+# 4. ACTIVITY & LOGS MODELS (VERSI BARU YANG BENAR)
 # ==============================================================================
 class Activity(db.Model):
     __tablename__ = 'activities'
@@ -211,9 +211,9 @@ class Activity(db.Model):
     description = db.Column(db.Text)
     location = db.Column(db.String(200))
     
-    # [KOLOM BARU] Sesuai dengan activities.py Anda
+    # [WAJIB ADA] Kolom-kolom ini dibutuhkan oleh activities.py
     activity_type = db.Column(db.String(50), default='umum') 
-    start_time = db.Column(db.DateTime, nullable=False, index=True) 
+    start_time = db.Column(db.DateTime, nullable=False, index=True) # Menggantikan scheduled_at
     end_time = db.Column(db.DateTime)
     max_participants = db.Column(db.Integer)
     current_participants = db.Column(db.Integer, default=0)
@@ -230,7 +230,7 @@ class ActivityParticipant(db.Model):
     activity_id = db.Column(db.Integer, db.ForeignKey('activities.id', ondelete='CASCADE'))
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'))
     status = db.Column(db.String(20), default='registered') 
-    registered_at = db.Column(db.DateTime, default=datetime.utcnow)
+    registered_at = db.Column(db.DateTime, default=datetime.utcnow) # Menggantikan joined_at
 
 class ContentConsumption(db.Model):
     __tablename__ = 'content_consumption'

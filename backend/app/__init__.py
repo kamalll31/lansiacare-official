@@ -37,14 +37,13 @@ def create_app():
     # ==================================================================
     db.init_app(app)
     jwt.init_app(app)
+    migrate.init_app(app, db)
     
-    # Load Models agar terdeteksi
+    # Load Models agar terdeteksi (PENTING untuk migrate dan create_all)
     try:
         from app import models 
     except ImportError:
         pass 
-    
-    migrate.init_app(app, db)
     
     # ==================================================================
     # 3. KONFIGURASI CORS
@@ -65,40 +64,37 @@ def create_app():
     @app.route('/setup-db-darurat')
     def setup_database_and_admin():
         try:
-            # [CRITICAL] Hapus tabel lama yang strukturnya salah
+            # [CRITICAL] Hapus tabel lama agar struktur baru bisa masuk
+            # Uncomment baris di bawah ini jika ingin mereset total database
             db.drop_all() 
             
-            # Buat tabel baru yang bersih dan sesuai models terbaru
+            # Buat tabel baru
             db.create_all()
             status_msg = ["♻️ Database berhasil DI-RESET dan DIBANGUN ULANG."]
 
+            # Import model di dalam fungsi untuk menghindari circular import
             from app.models import User, UserProfile
             
             admin_phone = "08123456789"
             
-            # Buat Admin Baru (Pasti belum ada karena db habis di-reset)
-            existing_admin = User.query.filter_by(phone=admin_phone).first()
-            if not existing_admin:
-                new_admin = User(
-                    phone=admin_phone,
-                    role="admin",
-                    is_active=True,
-                    is_verified=True
-                )
-                new_admin.set_password("admin123")
-                db.session.add(new_admin)
-                db.session.flush()
+            new_admin = User(
+                phone=admin_phone,
+                role="admin",
+                is_active=True,
+                is_verified=True
+            )
+            new_admin.set_password("admin123")
+            db.session.add(new_admin)
+            db.session.flush()
 
-                admin_profile = UserProfile(
-                    user_id=new_admin.id,
-                    full_name="Super Admin Vercel",
-                    address="Kantor Pusat Lansia Care (Cloud)"
-                )
-                db.session.add(admin_profile)
-                db.session.commit()
-                status_msg.append(f"🚀 User Admin {admin_phone} BERHASIL DIBUAT!")
-            else:
-                status_msg.append(f"ℹ️ User Admin {admin_phone} sudah ada.")
+            admin_profile = UserProfile(
+                user_id=new_admin.id,
+                full_name="Super Admin Vercel",
+                address="Kantor Pusat Lansia Care (Cloud)"
+            )
+            db.session.add(admin_profile)
+            db.session.commit()
+            status_msg.append(f"🚀 User Admin {admin_phone} BERHASIL DIBUAT!")
 
             return jsonify({
                 "status": "success", 
@@ -113,27 +109,54 @@ def create_app():
     # ==================================================================
     # 4. REGISTER BLUEPRINTS (ROUTES)
     # ==================================================================
+    # Kita import di sini agar model sudah siap
+    
+    # 1. Auth Routes
     try:
-        # 1. Auth Routes
         from app.api.v1.auth import auth_bp
         app.register_blueprint(auth_bp, url_prefix='/api/v1/auth')
-        
-        # 2. Users Routes (INI YANG BARU DITAMBAHKAN ✅)
+    except ImportError as e:
+         print(f"⚠️ Warning: Auth Blueprint Import Error: {e}")
+
+    # 2. Users Routes
+    try:
         from app.api.v1.users import users_bp
         app.register_blueprint(users_bp, url_prefix='/api/v1/users')
-        
-        # 3. Admin Routes
+    except ImportError as e:
+         print(f"⚠️ Warning: Users Blueprint Import Error: {e}")
+    
+    # 3. Activities Routes (PENTING: INI YANG SEBELUMNYA KURANG)
+    try:
+        from app.api.v1.activities import activities_bp
+        app.register_blueprint(activities_bp, url_prefix='/api/v1/activities')
+    except ImportError as e:
+         print(f"⚠️ Warning: Activities Blueprint Import Error: {e}")
+
+    # 4. Admin Routes
+    try:
         from app.api.v1.admin import admin_bp
         app.register_blueprint(admin_bp, url_prefix='/api/v1/admin')
+    except ImportError as e:
+         print(f"⚠️ Warning: Admin Blueprint Import Error: {e}")
 
-        # 4. Content Routes
+    # 5. Content Routes
+    try:
         from app.api.v1.content import content_bp
         app.register_blueprint(content_bp, url_prefix='/api/v1/content')
-        
-        # Tambahkan blueprint lain di sini (Activities, Family, Emergency) jika filenya sudah ada
-        
     except ImportError as e:
-        print(f"⚠️ Warning: Blueprint Import Error: {e}")
+         print(f"⚠️ Warning: Content Blueprint Import Error: {e}")
+    
+    # 6. Family Routes (Optional)
+    try:
+        from app.api.v1.family import family_bp
+        app.register_blueprint(family_bp, url_prefix='/api/v1/family')
+    except ImportError: pass
+
+    # 7. Emergency Routes (Optional)
+    try:
+        from app.api.v1.emergency import emergency_bp
+        app.register_blueprint(emergency_bp, url_prefix='/api/v1/emergency')
+    except ImportError: pass
 
     # ==================================================================
     # 5. ROUTES DASAR
