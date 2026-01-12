@@ -6,19 +6,22 @@ import 'api_service.dart';
 
 class EmergencyService {
   
-  // --- CRUD METHODS (TETAP SAMA) ---
+  // ===========================================================================
+  // 1. MANAJEMEN KONTAK DARURAT (CRUD)
+  // ===========================================================================
 
   static Future<EmergencyContactsResponse> getEmergencyContacts() async {
     try {
-      final response = await ApiService.getEmergencyContacts();
+      final response = await ApiService.get('/emergency/contacts');
+      
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return EmergencyContactsResponse.fromJson(data);
       } else {
-        throw Exception('Failed to load emergency contacts: ${response.statusCode}');
+        throw Exception('Gagal memuat kontak: ${response.statusCode}');
       }
     } catch (e) {
-      throw Exception('Gagal memuat kontak darurat: $e');
+      throw Exception('Error memuat kontak: $e');
     }
   }
 
@@ -29,7 +32,7 @@ class EmergencyService {
     required bool isPrimary,
   }) async {
     try {
-      final response = await ApiService.addEmergencyContact({
+      final response = await ApiService.post('/emergency/contacts', {
         'contact_name': contactName,
         'phone': phone,
         'relationship': relationship,
@@ -41,10 +44,10 @@ class EmergencyService {
         return EmergencyContact.fromJson(data['contact']);
       } else {
         final errorData = json.decode(response.body);
-        throw Exception(errorData['error'] ?? 'Failed to add contact');
+        throw Exception(errorData['error'] ?? 'Gagal menambah kontak');
       }
     } catch (e) {
-      throw Exception('Gagal menambah kontak: $e');
+      throw Exception('Error menambah kontak: $e');
     }
   }
 
@@ -56,7 +59,7 @@ class EmergencyService {
     required bool isPrimary,
   }) async {
     try {
-      final response = await ApiService.updateEmergencyContact(contactId, {
+      final response = await ApiService.put('/emergency/contacts/$contactId', {
         'contact_name': contactName,
         'phone': phone,
         'relationship': relationship,
@@ -68,97 +71,110 @@ class EmergencyService {
         return EmergencyContact.fromJson(data['contact']);
       } else {
         final errorData = json.decode(response.body);
-        throw Exception(errorData['error'] ?? 'Failed to update contact');
+        throw Exception(errorData['error'] ?? 'Gagal update kontak');
       }
     } catch (e) {
-      throw Exception('Gagal mengupdate kontak: $e');
+      throw Exception('Error update kontak: $e');
     }
   }
 
   static Future<void> deleteEmergencyContact(int contactId) async {
     try {
-      final response = await ApiService.deleteEmergencyContact(contactId);
+      final response = await ApiService.delete('/emergency/contacts/$contactId');
+      
       if (response.statusCode != 200) {
         final errorData = json.decode(response.body);
-        throw Exception(errorData['error'] ?? 'Failed to delete contact');
+        throw Exception(errorData['error'] ?? 'Gagal hapus kontak');
       }
     } catch (e) {
-      throw Exception('Gagal menghapus kontak: $e');
+      throw Exception('Error hapus kontak: $e');
     }
   }
 
   static Future<ContactStats> getContactStats() async {
     try {
-      final response = await ApiService.getEmergencyStats();
+      final response = await ApiService.get('/emergency/contacts/stats');
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return ContactStats.fromJson(data);
       } else {
-        throw Exception('Failed to load contact stats');
+        throw Exception('Gagal memuat statistik');
       }
     } catch (e) {
       return ContactStats(totalContacts: 0, hasPrimary: false, primaryContact: null);
     }
   }
 
-  // --- SOS TRIGGER METHOD (UPDATED FOR HYBRID LOGIC) ---
+  // ===========================================================================
+  // 2. SISTEM SOS & LOKASI (PROFESSIONAL VERSION)
+  // ===========================================================================
 
   static Future<Map<String, dynamic>> triggerSOS() async {
     try {
       print('DEBUG: Getting location for SOS...');
-      // 1. Ambil Lokasi GPS
+      
+      // 1. Ambil Lokasi GPS (High Accuracy Mode)
       Position position = await _determinePosition();
       
       print('DEBUG: Triggering SOS API...');
-      // 2. Kirim ke Backend
-      final response = await ApiService.triggerSOS();
+      
+      // 2. Kirim ke Backend untuk Log Medis
+      final response = await ApiService.post('/emergency/sos', {
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+      });
       
       print('DEBUG: Response status: ${response.statusCode}');
       
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         
-        // 3. Ambil daftar target dari backend (Gabungan Keluarga + Manual)
+        // 3. Ambil Daftar Kontak Target
         List<dynamic> targets = data['targets'] ?? [];
 
         if (targets.isNotEmpty) {
-          // Ambil target prioritas pertama
           var primeTarget = targets[0];
           String phone = primeTarget['phone'];
-          String name = primeTarget['name'];
+          String name = primeTarget['name']; // Nama Lansia (User)
           
           // Format nomor WA (08 -> 628)
           if (phone.startsWith('0')) {
             phone = '62${phone.substring(1)}';
           }
 
-          // Buat Link Google Maps (FIXED INTERPOLATION)
-          String googleMapsLink = "http://maps.google.com/?q=${position.latitude},${position.longitude}";
+          // 4. Generate Link Google Maps Resmi (Standard Universal Link)
+          String googleMapsLink = "https://www.google.com/maps?q=${position.latitude},${position.longitude}";
           
-          // Pesan Default
-          String message = "🚨 *SOS DARURAT!* 🚨\n\nSaya butuh bantuan segera!\nNama Kontak: $name\n📍 Lokasi Saya: $googleMapsLink";
+          // 5. Susun Pesan Formal
+          String message = 
+              "⚠️ *PERINGATAN DARURAT - LANSIA CARE* ⚠️\n\n"
+              "Yth. Keluarga / Kerabat,\n\n"
+              "Sistem mendeteksi sinyal bahaya (SOS) dari pengguna:\n"
+              "👤 Nama: *$name*\n"
+              "❗ Status: *MEMBUTUHKAN BANTUAN SEGERA*\n\n"
+              "Mohon segera hubungi pengguna atau cek lokasi terkini di bawah ini:\n"
+              "📍 *Lokasi Real-time:*\n$googleMapsLink\n\n"
+              "_Pesan ini dikirim otomatis oleh Aplikasi Lansia Care._";
           
-          // 4. Buka WhatsApp Otomatis
+          // 6. Buka WhatsApp
           await _launchWhatsApp(phone, message);
           
           return {
             'success': true,
-            'message': 'Membuka WhatsApp ke $name',
+            'message': 'Mengirim notifikasi resmi ke keluarga',
             'data': data
           };
         } else {
-          // Kasus aneh: Sukses 200 tapi list target kosong
            return {
             'success': true, 
-            'message': 'SOS Tercatat di Server, tapi tidak ada nomor kontak ditemukan.'
+            'message': 'SOS Tercatat di Server, tapi belum ada kontak keluarga/darurat yang terhubung.'
           };
         }
       } else {
-        // Error dari server (misal 404 tidak ada kontak)
         final errorData = json.decode(response.body);
         return {
           'success': false,
-          'error': errorData['message'] ?? errorData['error'] ?? 'Gagal mengirim SOS',
+          'error': errorData['message'] ?? 'Gagal mengirim SOS',
         };
       }
     } catch (e) {
@@ -170,7 +186,7 @@ class EmergencyService {
     }
   }
 
-  // Helper: Buka WhatsApp
+  // Helper: Buka WhatsApp dengan Fallback
   static Future<void> _launchWhatsApp(String phone, String message) async {
     final Uri whatsappUrl = Uri.parse("whatsapp://send?phone=$phone&text=${Uri.encodeComponent(message)}");
     final Uri webUrl = Uri.parse("https://wa.me/$phone?text=${Uri.encodeComponent(message)}");
@@ -179,6 +195,7 @@ class EmergencyService {
       if (await canLaunchUrl(whatsappUrl)) {
         await launchUrl(whatsappUrl, mode: LaunchMode.externalApplication);
       } else {
+        // Fallback ke browser jika aplikasi WA tidak terinstall
         await launchUrl(webUrl, mode: LaunchMode.externalApplication);
       }
     } catch (e) {
@@ -186,16 +203,18 @@ class EmergencyService {
     }
   }
 
-  // Helper: Izin Lokasi
+  // Helper: Izin Lokasi & GPS High Accuracy
   static Future<Position> _determinePosition() async {
     bool serviceEnabled;
     LocationPermission permission;
 
+    // Cek Service GPS
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      throw Exception('Layanan Lokasi (GPS) mati. Mohon nyalakan.');
+      throw Exception('Layanan Lokasi (GPS) mati. Mohon nyalakan GPS Anda.');
     }
 
+    // Cek Izin Aplikasi
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
@@ -205,9 +224,14 @@ class EmergencyService {
     }
     
     if (permission == LocationPermission.deniedForever) {
-      throw Exception('Izin lokasi ditolak permanen. Ubah di pengaturan.');
+      throw Exception('Izin lokasi ditolak permanen. Ubah di pengaturan HP.');
     }
 
-    return await Geolocator.getCurrentPosition();
+    // AMBIL LOKASI (High Accuracy)
+    // Time limit 10 detik agar HP punya waktu mencari satelit
+    return await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+      timeLimit: const Duration(seconds: 10),
+    );
   }
 }

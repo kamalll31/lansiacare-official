@@ -2,12 +2,12 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
 from app.models import EmergencyContact, User, UserProfile, FamilyConnection, SystemLog
-import datetime
+import datetime # Import standar python
 
 emergency_bp = Blueprint('emergency', __name__)
 
 # ==============================================================================
-# CRUD CONTACTS (Logika Lama Anda - Tetap Dipertahankan)
+# CRUD CONTACTS (TETAP SAMA)
 # ==============================================================================
 
 @emergency_bp.route('/contacts', methods=['GET'])
@@ -160,7 +160,7 @@ def get_contacts_stats():
         return jsonify({'error': str(e)}), 500
 
 # ==============================================================================
-# LOGIKA SOS BARU (HYBRID: FAMILY + MANUAL)
+# LOGIKA SOS (HYBRID: FAMILY + MANUAL)
 # ==============================================================================
 
 @emergency_bp.route('/sos', methods=['POST'])
@@ -242,3 +242,59 @@ def trigger_sos():
     except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+# ==============================================================================
+# MONITORING ALERT (UNTUK APLIKASI KELUARGA)
+# ==============================================================================
+
+@emergency_bp.route('/monitor', methods=['GET'])
+@jwt_required()
+def check_family_alert():
+    try:
+        family_user_id = get_jwt_identity()
+        
+        # 1. Cari Lansia yang terhubung dengan akun Keluarga ini
+        connections = FamilyConnection.query.filter_by(
+            family_user_id=family_user_id, 
+            is_verified=True
+        ).all()
+        
+        if not connections:
+            return jsonify({'status': 'safe', 'message': 'Tidak ada lansia terhubung'}), 200
+
+        # 2. Cek apakah ada Lansia yang menekan SOS dalam 5 menit terakhir
+        active_alerts = []
+        # Menggunakan datetime.timedelta untuk menghitung mundur 5 menit
+        time_threshold = datetime.datetime.utcnow() - datetime.timedelta(minutes=5)
+        
+        for conn in connections:
+            # Cek Log Sistem untuk User Lansia ini
+            recent_sos = SystemLog.query.filter(
+                SystemLog.user_id == conn.lansia_user_id,
+                SystemLog.action == "EMERGENCY_SOS",
+                SystemLog.timestamp >= time_threshold
+            ).first()
+            
+            if recent_sos:
+                # Ambil nama lansia
+                lansia = User.query.get(conn.lansia_user_id)
+                lansia_name = lansia.profile.full_name if lansia and lansia.profile else "Lansia"
+                
+                active_alerts.append({
+                    'lansia_id': conn.lansia_user_id,
+                    'name': lansia_name,
+                    'time': recent_sos.timestamp.isoformat(),
+                    'location_info': recent_sos.details
+                })
+        
+        # 3. Kirim Status
+        if active_alerts:
+            return jsonify({
+                'status': 'DANGER', # Sinyal bahaya untuk Flutter
+                'alerts': active_alerts
+            }), 200
+        else:
+            return jsonify({'status': 'safe'}), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
