@@ -8,198 +8,53 @@ class ServicesScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: const Text(
-          'Layanan & Informasi',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        title: const Text('Layanan & Informasi', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.blue[800],
         foregroundColor: Colors.white,
+        elevation: 0,
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Layanan Sosial Section
+          // 1. Layanan Sosial
           _buildServiceCategory(
             context: context,
             title: 'Layanan Sosial',
-            icon: Icons.social_distance,
+            icon: Icons.people_alt,
             color: Colors.green,
             services: [
-              {
-                'title': 'Bansos Lansia',
-                'description': 'Bantuan sosial untuk lansia dari pemerintah',
-                'icon': Icons.attach_money,
-                'color': Colors.green,
-              },
-              {
-                'title': 'Kartu Lansia',
-                'description': 'Kartu identitas dan akses layanan lansia',
-                'icon': Icons.badge,
-                'color': Colors.blue,
-              },
-              {
-                'title': 'Bantuan Transportasi',
-                'description': 'Bantuan transportasi untuk lansia tidak mampu',
-                'icon': Icons.directions_bus,
-                'color': Colors.orange,
-              },
-              {
-                'title': 'Pendampingan Administrasi',
-                'description': 'Bantuan mengurus dokumen dan administrasi',
-                'icon': Icons.description,
-                'color': Colors.purple,
-              },
+              {'title': 'Bansos Lansia', 'desc': 'Bantuan sosial pemerintah', 'icon': Icons.card_giftcard},
+              {'title': 'Kartu Lansia', 'desc': 'Identitas & akses gratis', 'icon': Icons.badge},
+              {'title': 'Transportasi', 'desc': 'Subsidi & jemputan', 'icon': Icons.directions_bus},
             ],
           ),
-
           const SizedBox(height: 20),
 
-          // Informasi Pemerintah Section
-          _buildServiceCategory(
-            context: context,
-            title: 'Informasi Pemerintah',
-            icon: Icons.account_balance,
-            color: Colors.blue,
-            services: [
-              {
-                'title': 'Program BPJS Lansia',
-                'description': 'Informasi program BPJS Kesehatan untuk lansia',
-                'icon': Icons.health_and_safety,
-                'color': Colors.red,
-              },
-              {
-                'title': 'Kebijakan Terbaru',
-                'description': 'Kebijakan pemerintah terkini untuk lansia',
-                'icon': Icons.policy,
-                'color': Colors.purple,
-              },
-              {
-                'title': 'Layanan Publik',
-                'description': 'Akses layanan publik terdekat untuk lansia',
-                'icon': Icons.public,
-                'color': Colors.teal,
-              },
-              {
-                'title': 'Informasi Pajak Lansia',
-                'description': 'Keringanan dan informasi pajak untuk lansia',
-                'icon': Icons.receipt,
-                'color': Colors.orange,
-              },
-            ],
-          ),
-
-          const SizedBox(height: 20),
-
-          // Komunitas Section
-          _buildServiceCategory(
-            context: context,
-            title: 'Komunitas',
-            icon: Icons.group,
-            color: Colors.orange,
-            services: [
-              {
-                'title': 'Kelompok Lansia Daerah',
-                'description': 'Komunitas lansia di daerah Anda',
-                'icon': Icons.people,
-                'color': Colors.amber,
-              },
-              {
-                'title': 'Aktivitas Posyandu Lansia',
-                'description': 'Kegiatan posyandu dan pemeriksaan kesehatan',
-                'icon': Icons.medical_services,
-                'color': Colors.green,
-              },
-              {
-                'title': 'Program Volunteer',
-                'description': 'Kesempatan menjadi volunteer membantu sesama',
-                'icon': Icons.volunteer_activism,
-                'color': Colors.blue,
-              },
-              {
-                'title': 'Event Kebudayaan',
-                'description': 'Acara budaya dan tradisi untuk lansia',
-                'icon': Icons.celebration,
-                'color': Colors.purple,
-              },
-            ],
-          ),
-
-          const SizedBox(height: 20),
-
-          // Fasilitas Section
-          _buildServiceCategory(
-            context: context,
-            title: 'Fasilitas',
-            icon: Icons.local_hospital,
-            color: Colors.red,
-            services: [
-              {
-                'title': 'Puskesmas Terdekat',
-                'description': 'Informasi lokasi puskesmas terdekat',
-                'icon': Icons.local_hospital,
-                'color': Colors.red,
-              },
-              {
-                'title': 'Apotek Terdekat',
-                'description': 'Informasi lokasi apotek 24 jam',
-                'icon': Icons.local_pharmacy,
-                'color': Colors.green,
-              },
-              {
-                'title': 'Tempat Ibadah Ramah Lansia',
-                'description': 'Tempat ibadah dengan fasilitas lansia',
-                'icon': Icons.place,
-                'color': Colors.blue,
-              },
-              {
-                'title': 'Ruang Publik Aksesibel',
-                'description': 'Taman dan ruang publik ramah lansia',
-                'icon': Icons.park,
-                'color': Colors.green,
-              },
-            ],
-          ),
-
-          const SizedBox(height: 20),
-
-          // Kesehatan Section
+          // 2. Kesehatan & Fasilitas
           _buildServiceCategory(
             context: context,
             title: 'Kesehatan',
             icon: Icons.health_and_safety,
-            color: Colors.green,
+            color: Colors.red,
             services: [
-              {
-                'title': 'Tips Kesehatan Umum',
-                'description': 'Tips menjaga kesehatan di usia lanjut',
-                'icon': Icons.tips_and_updates,
-                'color': Colors.green,
-              },
-              {
-                'title': 'Informasi Layanan Kesehatan',
-                'description': 'Informasi rumah sakit dan klinik',
-                'icon': Icons.medical_information,
-                'color': Colors.blue,
-              },
-              {
-                'title': 'Pengingat Check-up',
-                'description': 'Pengingat pemeriksaan kesehatan rutin',
-                'icon': Icons.calendar_today,
-                'color': Colors.orange,
-              },
-              {
-                'title': 'Artikel Kesehatan',
-                'description': 'Artikel kesehatan khusus lansia',
-                'icon': Icons.article,
-                'color': Colors.purple,
-              },
+              {'title': 'BPJS Lansia', 'desc': 'Info jaminan kesehatan', 'icon': Icons.medical_services},
+              {'title': 'Posyandu', 'desc': 'Jadwal posyandu terdekat', 'icon': Icons.store},
+              {'title': 'Apotek 24 Jam', 'desc': 'Lokasi obat darurat', 'icon': Icons.local_pharmacy},
             ],
           ),
-
           const SizedBox(height: 20),
+          
+          // 3. Informasi
+          _buildServiceCategory(
+            context: context,
+            title: 'Informasi Publik',
+            icon: Icons.info,
+            color: Colors.blue,
+            services: [
+              {'title': 'Berita Terkini', 'desc': 'Update seputar lansia', 'icon': Icons.newspaper},
+              {'title': 'Nomor Penting', 'desc': 'Daftar telepon darurat', 'icon': Icons.contact_phone},
+            ],
+          ),
         ],
       ),
     );
@@ -212,174 +67,89 @@ class ServicesScreen extends StatelessWidget {
     required Color color,
     required List<Map<String, dynamic>> services,
   }) {
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Section Header
-            Row(
-              children: [
-                Container(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: Row(
+            children: [
+              Icon(icon, color: color),
+              const SizedBox(width: 8),
+              Text(title, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey[800])),
+            ],
+          ),
+        ),
+        Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: ListView.separated(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: services.length,
+            separatorBuilder: (ctx, i) => const Divider(height: 1, indent: 60),
+            itemBuilder: (ctx, i) {
+              final s = services[i];
+              return ListTile(
+                leading: Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    icon,
-                    color: color,
-                    size: 24,
-                  ),
+                  decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                  child: Icon(s['icon'], color: color),
                 ),
-                const SizedBox(width: 12),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey[800],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            
-            // Services List
-            ...services.map((service) => _buildServiceItem(
-              context: context,
-              title: service['title'] as String,
-              description: service['description'] as String,
-              icon: service['icon'] as IconData,
-              color: service['color'] as Color,
-            )),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildServiceItem({
-    required BuildContext context,
-    required String title,
-    required String description,
-    required IconData icon,
-    required Color color,
-  }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: () {
-            _showServiceDetail(context, title, description);
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                // Icon
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    icon,
-                    color: color,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                
-                // Text Content
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey[800],
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        description,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                
-                // Arrow
-                Icon(
-                  Icons.arrow_forward_ios,
-                  size: 16,
-                  color: Colors.grey[400],
-                ),
-              ],
-            ),
+                title: Text(s['title'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text(s['desc']),
+                trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+                onTap: () => _showDetail(context, s['title'], s['desc'], s['icon'], color),
+              );
+            },
           ),
         ),
-      ),
+      ],
     );
   }
 
-  void _showServiceDetail(BuildContext context, String title, String description) {
-    showDialog(
+  void _showDetail(BuildContext context, String title, String desc, IconData icon, Color color) {
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          title,
-          style: const TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        content: Column(
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              description,
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey[700],
-              ),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+              child: Icon(icon, size: 40, color: color),
             ),
             const SizedBox(height: 16),
-            Text(
-              'Fitur ini akan segera hadir dalam update berikutnya. Terima kasih atas pengertiannya.',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[500],
-                fontStyle: FontStyle.italic,
+            Text(title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text(desc, textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.grey[600])),
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: Colors.orange[50], borderRadius: BorderRadius.circular(8)),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.orange[800]),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text("Fitur ini sedang dalam pengembangan dan akan segera hadir.", style: TextStyle(color: Colors.orange[900]))),
+                ],
               ),
             ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white),
+                child: const Text("Tutup"),
+              ),
+            )
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'Tutup',
-              style: TextStyle(fontSize: 16),
-            ),
-          ),
-        ],
       ),
     );
   }

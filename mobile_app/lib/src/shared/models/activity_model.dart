@@ -1,3 +1,39 @@
+
+
+class ActivityItem {
+  final int id;
+  final String title;
+  final String description;
+  final String time;
+  bool isCompleted;
+  final String type; // 'activity' (Kegiatan) atau 'medication' (Obat)
+
+  ActivityItem({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.time,
+    required this.isCompleted,
+    required this.type,
+  });
+
+  factory ActivityItem.fromJson(Map<String, dynamic> json) {
+    return ActivityItem(
+      id: json['id'] ?? 0,
+      title: json['title'] ?? 'Tanpa Judul',
+      description: json['description'] ?? '',
+      time: json['time'] ?? '00:00',
+      isCompleted: json['is_completed'] ?? false, // Mapping dari backend boolean
+      type: json['type'] ?? 'activity',
+    );
+  }
+}
+
+// ==========================================
+// 2. MODEL KEGIATAN KOMUNITAS (LAMA)
+// Digunakan untuk: Community/Event Screen
+// ==========================================
+
 class Activity {
   final int id;
   final String title;

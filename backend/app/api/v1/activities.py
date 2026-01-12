@@ -1,12 +1,162 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
-from app.models import Activity, ActivityParticipant, User, UserProfile
+# PENTING: Import model baru (DailyTask, Medication)
+from app.models import Activity, ActivityParticipant, User, UserProfile, DailyTask, Medication
 from datetime import datetime, timedelta
 
 activities_bp = Blueprint('activities', __name__)
 
-# === FIXED ROUTES - CORRECT ENDPOINT PATHS ===
+# ==============================================================================
+# 1. DAILY SCHEDULE & MEDICATION (FASE 5 - NEW)
+# Endpoint ini untuk checklist harian pribadi lansia
+# ==============================================================================
+
+@activities_bp.route('/daily', methods=['GET'])
+@jwt_required()
+def get_daily_activities():
+    try:
+        user_id = get_jwt_identity()
+        
+        # A. Ambil Kegiatan Harian (DailyTask)
+        tasks = DailyTask.query.filter_by(user_id=user_id).order_by(DailyTask.time.asc()).all()
+        task_data = [{
+            'id': t.id,
+            'title': t.title,
+            'description': t.description,
+            'time': t.time,
+            'is_completed': t.is_completed,
+            'type': 'activity' # Penanda untuk Flutter
+        } for t in tasks]
+        
+        # B. Ambil Jadwal Obat (Medication)
+        meds = Medication.query.filter_by(user_id=user_id).order_by(Medication.time.asc()).all()
+        med_data = [{
+            'id': m.id,
+            'title': f"Minum Obat: {m.medicine_name}",
+            'description': f"Dosis: {m.dosage}",
+            'time': m.time,
+            'is_completed': m.is_taken, # Mapping is_taken -> is_completed
+            'type': 'medication', # Penanda untuk Flutter
+            'medicine_name': m.medicine_name,
+            'dosage': m.dosage
+        } for m in meds]
+        
+        # C. Gabungkan & Urutkan berdasarkan Jam
+        full_schedule = task_data + med_data
+        # Sort string time "07:00" secara ascending
+        full_schedule.sort(key=lambda x: x['time'])
+        
+        return jsonify({'schedule': full_schedule}), 200
+
+    except Exception as e:
+        print(f"DEBUG: Error in get_daily_activities: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@activities_bp.route('/activity', methods=['POST'])
+@jwt_required()
+def add_daily_activity():
+    try:
+        user_id = get_jwt_identity()
+        data = request.get_json()
+        
+        if not data.get('title') or not data.get('time'):
+            return jsonify({'error': 'Title dan Time wajib diisi'}), 400
+        
+        new_task = DailyTask(
+            user_id=user_id,
+            title=data['title'],
+            description=data.get('description', ''),
+            time=data['time'] # Format "HH:MM"
+        )
+        db.session.add(new_task)
+        db.session.commit()
+        return jsonify({'message': 'Kegiatan harian berhasil ditambahkan'}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@activities_bp.route('/medication', methods=['POST'])
+@jwt_required()
+def add_medication():
+    try:
+        user_id = get_jwt_identity()
+        data = request.get_json()
+        
+        if not data.get('medicine_name') or not data.get('time'):
+            return jsonify({'error': 'Nama obat dan Waktu wajib diisi'}), 400
+        
+        new_med = Medication(
+            user_id=user_id,
+            medicine_name=data['medicine_name'],
+            dosage=data.get('dosage', ''),
+            time=data['time']
+        )
+        db.session.add(new_med)
+        db.session.commit()
+        return jsonify({'message': 'Obat berhasil ditambahkan'}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@activities_bp.route('/activity/<int:id>/toggle', methods=['PUT'])
+@jwt_required()
+def toggle_activity_status(id):
+    try:
+        user_id = get_jwt_identity()
+        task = DailyTask.query.filter_by(id=id, user_id=user_id).first()
+        if not task: return jsonify({'error': 'Not found'}), 404
+        
+        task.is_completed = not task.is_completed
+        db.session.commit()
+        return jsonify({'status': task.is_completed}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@activities_bp.route('/medication/<int:id>/toggle', methods=['PUT'])
+@jwt_required()
+def toggle_medication_status(id):
+    try:
+        user_id = get_jwt_identity()
+        med = Medication.query.filter_by(id=id, user_id=user_id).first()
+        if not med: return jsonify({'error': 'Not found'}), 404
+        
+        med.is_taken = not med.is_taken
+        db.session.commit()
+        return jsonify({'status': med.is_taken}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@activities_bp.route('/activity/<int:id>', methods=['DELETE'])
+@jwt_required()
+def delete_daily_activity(id):
+    try:
+        user_id = get_jwt_identity()
+        task = DailyTask.query.filter_by(id=id, user_id=user_id).first()
+        if not task: return jsonify({'error': 'Not found'}), 404
+        db.session.delete(task)
+        db.session.commit()
+        return jsonify({'message': 'Dihapus'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@activities_bp.route('/medication/<int:id>', methods=['DELETE'])
+@jwt_required()
+def delete_medication(id):
+    try:
+        user_id = get_jwt_identity()
+        med = Medication.query.filter_by(id=id, user_id=user_id).first()
+        if not med: return jsonify({'error': 'Not found'}), 404
+        db.session.delete(med)
+        db.session.commit()
+        return jsonify({'message': 'Dihapus'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ==============================================================================
+# 2. COMMUNITY EVENTS (KODE LAMA - PERBAIKAN URUTAN ROUTE)
+# Endpoint ini untuk event sosial (Senam bersama, Baksos, dll)
+# ==============================================================================
+
 @activities_bp.route('', methods=['GET'])
 @jwt_required()
 def get_activities():
@@ -32,13 +182,11 @@ def get_activities():
         if date_from:
             try:
                 query = query.filter(Activity.start_time >= datetime.fromisoformat(date_from))
-            except ValueError:
-                pass
+            except ValueError: pass
         if date_to:
             try:
                 query = query.filter(Activity.start_time <= datetime.fromisoformat(date_to))
-            except ValueError:
-                pass
+            except ValueError: pass
         
         # Order by start time
         activities = query.order_by(Activity.start_time.asc()).all()

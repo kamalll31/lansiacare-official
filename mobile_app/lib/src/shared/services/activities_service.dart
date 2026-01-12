@@ -3,13 +3,104 @@ import 'package:lansiacare/src/shared/models/activity_model.dart';
 import 'api_service.dart';
 
 class ActivitiesService {
+  
+  // ===========================================================================
+  // 1. JADWAL HARIAN & OBAT (FASE 5 - BARU)
+  // Digunakan di: ActivitiesScreen (Tab Hari Ini)
+  // ===========================================================================
+
+  static Future<List<ActivityItem>> getDailySchedule() async {
+    try {
+      final response = await ApiService.get('/activities/daily');
+      
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final List<dynamic> scheduleData = data['schedule'];
+        return scheduleData.map((json) => ActivityItem.fromJson(json)).toList();
+      } else {
+        throw Exception('Gagal memuat jadwal: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error fetch daily: $e');
+    }
+  }
+
+  static Future<void> addActivity(String title, String desc, String time) async {
+    try {
+      final response = await ApiService.post('/activities/activity', {
+        'title': title,
+        'description': desc,
+        'time': time,
+      });
+      
+      if (response.statusCode != 201) {
+        throw Exception('Gagal menambah kegiatan');
+      }
+    } catch (e) {
+      throw Exception('Error add activity: $e');
+    }
+  }
+
+  static Future<void> addMedication(String name, String dosage, String time) async {
+    try {
+      final response = await ApiService.post('/activities/medication', {
+        'medicine_name': name,
+        'dosage': dosage,
+        'time': time,
+      });
+      
+      if (response.statusCode != 201) {
+        throw Exception('Gagal menambah obat');
+      }
+    } catch (e) {
+      throw Exception('Error add medication: $e');
+    }
+  }
+
+  static Future<void> toggleStatus(int id, String type) async {
+    try {
+      // Pilih endpoint berdasarkan tipe item
+      String endpoint = type == 'activity' 
+          ? '/activities/activity/$id/toggle' 
+          : '/activities/medication/$id/toggle';
+          
+      final response = await ApiService.put(endpoint, {});
+      
+      if (response.statusCode != 200) {
+        throw Exception('Gagal update status');
+      }
+    } catch (e) {
+      throw Exception('Error toggle: $e');
+    }
+  }
+
+  static Future<void> deleteItem(int id, String type) async {
+    try {
+      String endpoint = type == 'activity' 
+          ? '/activities/activity/$id' 
+          : '/activities/medication/$id';
+          
+      final response = await ApiService.delete(endpoint);
+      
+      if (response.statusCode != 200) {
+        throw Exception('Gagal menghapus item');
+      }
+    } catch (e) {
+      throw Exception('Error delete: $e');
+    }
+  }
+
+  // ===========================================================================
+  // 2. KEGIATAN KOMUNITAS / EVENT (KODE LAMA - TETAP DIPERTAHANKAN)
+  // Digunakan di: Community Screen / Event List
+  // ===========================================================================
+
   static Future<ActivitiesResponse> getActivities({
     String? type,
     String? dateFrom,
     String? dateTo,
   }) async {
     try {
-      // Build query parameters
       final Map<String, String> queryParams = {};
       if (type != null) queryParams['type'] = type;
       if (dateFrom != null) queryParams['date_from'] = dateFrom;
@@ -109,7 +200,6 @@ class ActivitiesService {
       }
     } catch (e) {
       print('DEBUG: Error in getActivityStats: $e');
-      // Return default stats jika error
       return ActivityStats(
         totalRegistered: 0,
         upcomingCount: 0,

@@ -101,14 +101,10 @@ class FamilyConnection(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     lansia_user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     family_user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    
-    # [KOLOM BARU YANG DIBUTUHKAN API FAMILY.PY]
-    relationship = db.Column(db.String(50))           # Hubungan (Anak, Cucu, dll)
-    access_level = db.Column(db.String(20), default='basic') # Hak akses
-    is_verified = db.Column(db.Boolean, default=False)       # Pengganti status 'pending'
-    
+    relationship = db.Column(db.String(50))           
+    access_level = db.Column(db.String(20), default='basic')
+    is_verified = db.Column(db.Boolean, default=False)       
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
     __table_args__ = (db.UniqueConstraint('lansia_user_id', 'family_user_id', name='uq_family_connection'),)
 
 class EmergencyContact(db.Model):
@@ -178,16 +174,6 @@ class ContentItem(db.Model):
             'view_count': self.view_count,
             'created_at': self.created_at.isoformat()
         }
-    
-    def _get_category_display(self):
-        return self.category.replace('_', ' ').title()
-    
-    def _format_duration(self):
-        if not self.duration: return "0m"
-        return f"{self.duration // 60}m {self.duration % 60}s"
-    
-    def _get_embed_thumbnail(self):
-        return self.thumbnail_url
 
 class ContentTranscript(db.Model):
     __tablename__ = 'content_transcripts'
@@ -207,19 +193,33 @@ class UrlAnalysis(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     content_items = db.relationship('ContentItem', backref='url_analysis', lazy='dynamic')
 
+class ContentConsumption(db.Model):
+    __tablename__ = 'content_consumption'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'))
+    content_id = db.Column(db.Integer, db.ForeignKey('content_items.id', ondelete='CASCADE'))
+    progress_seconds = db.Column(db.Integer, default=0) 
+    is_finished = db.Column(db.Boolean, default=False)
+    last_accessed = db.Column(db.DateTime, default=datetime.utcnow)
+    consumption_type = db.Column(db.String(20), default='view')
+    start_time = db.Column(db.DateTime)
+    end_time = db.Column(db.DateTime)
+    device_type = db.Column(db.String(50))
+    player_used = db.Column(db.String(20))
+
 # ==============================================================================
-# 4. ACTIVITY & LOGS MODELS (VERSI BARU YANG BENAR)
+# 4. COMMUNITY ACTIVITY (EVENTS)
 # ==============================================================================
 class Activity(db.Model):
+    """Model ini untuk Kegiatan Komunitas / Event (Bukan checklist harian)"""
     __tablename__ = 'activities'
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text)
     location = db.Column(db.String(200))
     
-    # [WAJIB ADA] Kolom-kolom ini dibutuhkan oleh activities.py
     activity_type = db.Column(db.String(50), default='umum') 
-    start_time = db.Column(db.DateTime, nullable=False, index=True) # Menggantikan scheduled_at
+    start_time = db.Column(db.DateTime, nullable=False, index=True) 
     end_time = db.Column(db.DateTime)
     max_participants = db.Column(db.Integer)
     current_participants = db.Column(db.Integer, default=0)
@@ -236,22 +236,42 @@ class ActivityParticipant(db.Model):
     activity_id = db.Column(db.Integer, db.ForeignKey('activities.id', ondelete='CASCADE'))
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'))
     status = db.Column(db.String(20), default='registered') 
-    registered_at = db.Column(db.DateTime, default=datetime.utcnow) # Menggantikan joined_at
+    registered_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-class ContentConsumption(db.Model):
-    __tablename__ = 'content_consumption'
+# ==============================================================================
+# 5. PERSONAL HEALTH & DAILY SCHEDULE (NEW FOR PHASE 5)
+# ==============================================================================
+class DailyTask(db.Model):
+    """Checklist kegiatan harian (Makan, Mandi, Senam sendiri)"""
+    __tablename__ = 'daily_tasks'
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'))
-    content_id = db.Column(db.Integer, db.ForeignKey('content_items.id', ondelete='CASCADE'))
-    progress_seconds = db.Column(db.Integer, default=0) 
-    is_finished = db.Column(db.Boolean, default=False)
-    last_accessed = db.Column(db.DateTime, default=datetime.utcnow)
-    consumption_type = db.Column(db.String(20), default='view')
-    start_time = db.Column(db.DateTime)
-    end_time = db.Column(db.DateTime)
-    device_type = db.Column(db.String(50))
-    player_used = db.Column(db.String(20))
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    title = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.String(255), nullable=True)
+    time = db.Column(db.String(50), nullable=False) # Format "07:00"
+    is_completed = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    def __repr__(self):
+        return f'<DailyTask {self.title}>'
+
+class Medication(db.Model):
+    """Jadwal minum obat"""
+    __tablename__ = 'medication'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    medicine_name = db.Column(db.String(100), nullable=False)
+    dosage = db.Column(db.String(50), nullable=True)
+    time = db.Column(db.String(50), nullable=False) # Format "13:00"
+    is_taken = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<Medication {self.medicine_name}>'
+
+# ==============================================================================
+# 6. SYSTEM LOGS
+# ==============================================================================
 class SystemLog(db.Model):
     __tablename__ = 'system_logs'
     id = db.Column(db.Integer, primary_key=True)
@@ -276,14 +296,20 @@ def setup_relationships():
     )
     
     User.content_items = db.relationship('ContentItem', backref='author', lazy='dynamic')
+    
+    # Community Activities (Events)
     User.activities = db.relationship('Activity', backref='creator', lazy='dynamic', foreign_keys='Activity.created_by')
     User.participations = db.relationship('ActivityParticipant', backref='user', lazy='dynamic')
+    
+    # Personal Schedules
+    User.daily_tasks = db.relationship('DailyTask', backref='user', lazy='dynamic', cascade='all, delete-orphan')
+    User.medications = db.relationship('Medication', backref='user', lazy='dynamic', cascade='all, delete-orphan')
+    
     User.emergency_contacts = db.relationship('EmergencyContact', backref='lansia', lazy='dynamic', cascade='all, delete-orphan')
     
     ContentItem.transcripts = db.relationship('ContentTranscript', backref='content_item', lazy='dynamic', cascade='all, delete-orphan')
     ContentItem.consumptions = db.relationship('ContentConsumption', backref='content_item', lazy='dynamic', cascade='all, delete-orphan')
     
-    # Activity Relationships
     Activity.participants = db.relationship('ActivityParticipant', backref='activity', lazy='dynamic', cascade='all, delete-orphan')
 
 setup_relationships()

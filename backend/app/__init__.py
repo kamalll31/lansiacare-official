@@ -1,11 +1,10 @@
 import os
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS 
 from flask_migrate import Migrate
 from dotenv import load_dotenv
-from datetime import datetime
 from sqlalchemy import text 
 
 load_dotenv()
@@ -23,8 +22,17 @@ def create_app():
     # ==================================================================
     basedir = os.path.abspath(os.path.dirname(__file__))
     
-    # Mengambil DATABASE_URL dari Vercel
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///' + os.path.join(basedir, '../instance/dev.db'))
+    # Mengambil DATABASE_URL dari Vercel/Supabase
+    # Fallback ke SQLite lokal jika env tidak ada
+    database_url = os.environ.get('DATABASE_URL')
+    if not database_url:
+        database_url = 'sqlite:///' + os.path.join(basedir, '../instance/dev.db')
+    
+    # Fix untuk postgresql:// (SQLAlchemy butuh postgresql:// bukan postgres://)
+    if database_url and database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     # Security Config
@@ -39,11 +47,12 @@ def create_app():
     jwt.init_app(app)
     migrate.init_app(app, db)
     
-    # Load Models agar terdeteksi (PENTING untuk migrate dan create_all)
-    try:
-        from app import models 
-    except ImportError:
-        pass 
+    # Load Models agar terdeteksi oleh Alembic/Migrate
+    with app.app_context():
+        try:
+            from app import models
+        except ImportError:
+            pass
     
     # ==================================================================
     # 3. KONFIGURASI CORS
@@ -64,37 +73,41 @@ def create_app():
     @app.route('/setup-db-darurat')
     def setup_database_and_admin():
         try:
-            # [CRITICAL] Hapus tabel lama agar struktur baru bisa masuk
             # Uncomment baris di bawah ini jika ingin mereset total database
-            db.drop_all() 
+            # db.drop_all() 
             
-            # Buat tabel baru
+            # Buat tabel baru jika belum ada
             db.create_all()
-            status_msg = ["♻️ Database berhasil DI-RESET dan DIBANGUN ULANG."]
+            status_msg = ["♻️ Database tables created/verified."]
 
             # Import model di dalam fungsi untuk menghindari circular import
             from app.models import User, UserProfile
             
             admin_phone = "08123456789"
             
-            new_admin = User(
-                phone=admin_phone,
-                role="admin",
-                is_active=True,
-                is_verified=True
-            )
-            new_admin.set_password("admin123")
-            db.session.add(new_admin)
-            db.session.flush()
+            # Cek apakah admin sudah ada
+            existing_admin = User.query.filter_by(phone=admin_phone).first()
+            if not existing_admin:
+                new_admin = User(
+                    phone=admin_phone,
+                    role="admin",
+                    is_active=True,
+                    is_verified=True
+                )
+                new_admin.set_password("admin123")
+                db.session.add(new_admin)
+                db.session.flush() # Agar ID admin ter-generate
 
-            admin_profile = UserProfile(
-                user_id=new_admin.id,
-                full_name="Super Admin Vercel",
-                address="Kantor Pusat Lansia Care (Cloud)"
-            )
-            db.session.add(admin_profile)
-            db.session.commit()
-            status_msg.append(f"🚀 User Admin {admin_phone} BERHASIL DIBUAT!")
+                admin_profile = UserProfile(
+                    user_id=new_admin.id,
+                    full_name="Super Admin Vercel",
+                    address="Kantor Pusat Lansia Care (Cloud)"
+                )
+                db.session.add(admin_profile)
+                db.session.commit()
+                status_msg.append(f"🚀 User Admin {admin_phone} BERHASIL DIBUAT!")
+            else:
+                status_msg.append("ℹ️ User Admin sudah ada.")
 
             return jsonify({
                 "status": "success", 
@@ -109,7 +122,6 @@ def create_app():
     # ==================================================================
     # 4. REGISTER BLUEPRINTS (ROUTES)
     # ==================================================================
-    # Kita import di sini agar model sudah siap
     
     # 1. Auth Routes
     try:
@@ -120,7 +132,7 @@ def create_app():
 
     # 2. Users Routes
     try:
-        from app.api.v1.users import users_bp
+        from app.api.v1.users import users_bp # Pastikan file app/api/v1/users.py ADA
         app.register_blueprint(users_bp, url_prefix='/api/v1/users')
     except ImportError as e:
          print(f"⚠️ Warning: Users Blueprint Import Error: {e}")
@@ -146,14 +158,14 @@ def create_app():
     except ImportError as e:
          print(f"⚠️ Warning: Content Blueprint Import Error: {e}")
     
-    # 6. Family Routes (UPDATED - Pastikan file family.py sudah ada)
+    # 6. Family Routes
     try:
         from app.api.v1.family import family_bp
         app.register_blueprint(family_bp, url_prefix='/api/v1/family')
     except ImportError as e:
          print(f"⚠️ Warning: Family Blueprint Import Error: {e}")
 
-    # 7. Emergency Routes (Optional)
+    # 7. Emergency Routes
     try:
         from app.api.v1.emergency import emergency_bp
         app.register_blueprint(emergency_bp, url_prefix='/api/v1/emergency')
@@ -172,7 +184,7 @@ def create_app():
     
     @app.route('/')
     def index():
-        return jsonify({'status': 'online', 'service': 'Lansia Care Backend'})
+        return jsonify({'status': 'online', 'service': 'Lansia Care Backend v1.0'})
     
     @app.route('/api/v1/health')
     def health_check():
