@@ -1,30 +1,23 @@
 import 'dart:convert';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:lansiacare/src/shared/models/emergency_model.dart';
 import 'api_service.dart';
 
 class EmergencyService {
+  
+  // --- CRUD METHODS (TETAP SAMA) ---
+
   static Future<EmergencyContactsResponse> getEmergencyContacts() async {
     try {
-      print('DEBUG: Getting emergency contacts...');
-      
       final response = await ApiService.getEmergencyContacts();
-      
-      print('DEBUG: Contacts response status: ${response.statusCode}');
-      print('DEBUG: Contacts response body: ${response.body}');
-      
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final contactsResponse = EmergencyContactsResponse.fromJson(data);
-        
-        print('DEBUG: Successfully parsed ${contactsResponse.contacts.length} contacts');
-        return contactsResponse;
+        return EmergencyContactsResponse.fromJson(data);
       } else {
-        final errorMessage = 'Failed to load emergency contacts: ${response.statusCode}';
-        print('DEBUG: $errorMessage');
-        throw Exception(errorMessage);
+        throw Exception('Failed to load emergency contacts: ${response.statusCode}');
       }
     } catch (e) {
-      print('DEBUG: Error in getEmergencyContacts: $e');
       throw Exception('Gagal memuat kontak darurat: $e');
     }
   }
@@ -36,8 +29,6 @@ class EmergencyService {
     required bool isPrimary,
   }) async {
     try {
-      print('DEBUG: Adding new contact: $contactName, $phone, $relationship, primary: $isPrimary');
-      
       final response = await ApiService.addEmergencyContact({
         'contact_name': contactName,
         'phone': phone,
@@ -45,26 +36,14 @@ class EmergencyService {
         'is_primary': isPrimary,
       });
       
-      print('DEBUG: Add contact response status: ${response.statusCode}');
-      print('DEBUG: Add contact response body: ${response.body}');
-      
       if (response.statusCode == 201) {
         final data = json.decode(response.body);
-        final contactData = data['contact'];
-        
-        if (contactData == null) {
-          throw Exception('Contact data is null in response');
-        }
-        
-        print('DEBUG: Successfully parsed new contact: $contactData');
-        return EmergencyContact.fromJson(contactData);
+        return EmergencyContact.fromJson(data['contact']);
       } else {
         final errorData = json.decode(response.body);
-        final errorMessage = errorData['error'] ?? 'Failed to add contact. Status: ${response.statusCode}';
-        throw Exception(errorMessage);
+        throw Exception(errorData['error'] ?? 'Failed to add contact');
       }
     } catch (e) {
-      print('DEBUG: Error in addEmergencyContact: $e');
       throw Exception('Gagal menambah kontak: $e');
     }
   }
@@ -77,8 +56,6 @@ class EmergencyService {
     required bool isPrimary,
   }) async {
     try {
-      print('DEBUG: Updating contact $contactId: $contactName, $phone, $relationship, primary: $isPrimary');
-      
       final response = await ApiService.updateEmergencyContact(contactId, {
         'contact_name': contactName,
         'phone': phone,
@@ -86,50 +63,26 @@ class EmergencyService {
         'is_primary': isPrimary,
       });
       
-      print('DEBUG: Update contact response status: ${response.statusCode}');
-      print('DEBUG: Update contact response body: ${response.body}');
-      
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        final contactData = data['contact'];
-        
-        if (contactData == null) {
-          throw Exception('Contact data is null in response');
-        }
-        
-        print('DEBUG: Successfully updated contact: $contactData');
-        return EmergencyContact.fromJson(contactData);
+        return EmergencyContact.fromJson(data['contact']);
       } else {
         final errorData = json.decode(response.body);
-        final errorMessage = errorData['error'] ?? 'Failed to update contact. Status: ${response.statusCode}';
-        throw Exception(errorMessage);
+        throw Exception(errorData['error'] ?? 'Failed to update contact');
       }
     } catch (e) {
-      print('DEBUG: Error in updateEmergencyContact: $e');
       throw Exception('Gagal mengupdate kontak: $e');
     }
   }
 
   static Future<void> deleteEmergencyContact(int contactId) async {
     try {
-      print('DEBUG: Deleting contact $contactId');
-      
       final response = await ApiService.deleteEmergencyContact(contactId);
-      
-      print('DEBUG: Delete contact response status: ${response.statusCode}');
-      print('DEBUG: Delete contact response body: ${response.body}');
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        print('DEBUG: Successfully deleted contact: $data');
-        return;
-      } else {
+      if (response.statusCode != 200) {
         final errorData = json.decode(response.body);
-        final errorMessage = errorData['error'] ?? 'Failed to delete contact. Status: ${response.statusCode}';
-        throw Exception(errorMessage);
+        throw Exception(errorData['error'] ?? 'Failed to delete contact');
       }
     } catch (e) {
-      print('DEBUG: Error in deleteEmergencyContact: $e');
       throw Exception('Gagal menghapus kontak: $e');
     }
   }
@@ -137,64 +90,126 @@ class EmergencyService {
   static Future<ContactStats> getContactStats() async {
     try {
       final response = await ApiService.getEmergencyStats();
-      
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return ContactStats.fromJson(data);
       } else {
-        throw Exception('Failed to load contact stats: ${response.statusCode}');
+        throw Exception('Failed to load contact stats');
       }
     } catch (e) {
-      print('DEBUG: Error in getContactStats: $e');
-      return ContactStats(
-        totalContacts: 0,
-        hasPrimary: false,
-        primaryContact: null,
-      );
+      return ContactStats(totalContacts: 0, hasPrimary: false, primaryContact: null);
     }
   }
 
+  // --- SOS TRIGGER METHOD (UPDATED FOR HYBRID LOGIC) ---
+
   static Future<Map<String, dynamic>> triggerSOS() async {
     try {
-      print('DEBUG: Triggering SOS...');
+      print('DEBUG: Getting location for SOS...');
+      // 1. Ambil Lokasi GPS
+      Position position = await _determinePosition();
       
+      print('DEBUG: Triggering SOS API...');
+      // 2. Kirim ke Backend
       final response = await ApiService.triggerSOS();
       
-      print('DEBUG: SOS response status: ${response.statusCode}');
-      print('DEBUG: SOS response body: ${response.body}');
+      print('DEBUG: Response status: ${response.statusCode}');
       
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        return {
-          'success': true,
-          'data': data,
-        };
-      } else {
-        final errorData = json.decode(response.body);
-        final errorMessage = errorData['error'] ?? 'Failed to trigger SOS';
         
+        // 3. Ambil daftar target dari backend (Gabungan Keluarga + Manual)
+        List<dynamic> targets = data['targets'] ?? [];
+
+        if (targets.isNotEmpty) {
+          // Ambil target prioritas pertama
+          var primeTarget = targets[0];
+          String phone = primeTarget['phone'];
+          String name = primeTarget['name'];
+          
+          // Format nomor WA (08 -> 628)
+          if (phone.startsWith('0')) {
+            phone = '62${phone.substring(1)}';
+          }
+
+          // Buat Link Google Maps
+          String googleMapsLink = "https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.longitude}";
+          
+          // Pesan Default
+          String message = "🚨 *SOS DARURAT!* 🚨\n\nSaya butuh bantuan segera!\nNama Kontak: $name\n📍 Lokasi Saya: $googleMapsLink";
+          
+          // 4. Buka WhatsApp Otomatis
+          await _launchWhatsApp(phone, message);
+          
+          return {
+            'success': true,
+            'message': 'Membuka WhatsApp ke $name',
+            'data': data
+          };
+        } else {
+          // Kasus aneh: Sukses 200 tapi list target kosong
+           return {
+            'success': true, 
+            'message': 'SOS Tercatat di Server, tapi tidak ada nomor kontak ditemukan.'
+          };
+        }
+      } else {
+        // Error dari server (misal 404 tidak ada kontak)
+        final errorData = json.decode(response.body);
         return {
           'success': false,
-          'error': errorMessage,
+          'error': errorData['message'] ?? errorData['error'] ?? 'Gagal mengirim SOS',
         };
       }
     } catch (e) {
       print('DEBUG: Error in triggerSOS: $e');
       return {
         'success': false,
-        'error': 'Network error: $e',
+        'error': 'Terjadi kesalahan: $e',
       };
     }
   }
 
-  static Future<void> debugBackendResponse() async {
+  // Helper: Buka WhatsApp
+  static Future<void> _launchWhatsApp(String phone, String message) async {
+    final Uri whatsappUrl = Uri.parse("whatsapp://send?phone=$phone&text=${Uri.encodeComponent(message)}");
+    final Uri webUrl = Uri.parse("https://wa.me/$phone?text=${Uri.encodeComponent(message)}");
+
     try {
-      print('DEBUG: Testing backend connection...');
-      final response = await ApiService.getEmergencyContacts();
-      print('DEBUG: Backend response status: ${response.statusCode}');
-      print('DEBUG: Backend response body: ${response.body}');
+      if (await canLaunchUrl(whatsappUrl)) {
+        await launchUrl(whatsappUrl, mode: LaunchMode.externalApplication);
+      } else {
+        await launchUrl(webUrl, mode: LaunchMode.externalApplication);
+      }
     } catch (e) {
-      print('DEBUG: Backend connection error: $e');
+      print("Error launching WA: $e");
     }
+  }
+
+  // Helper: Izin Lokasi
+  static Future<Position> _determinePosition() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      // Jika GPS mati, coba minta nyalakan atau throw error
+      // Untuk demo, kita throw error simple
+      throw Exception('Layanan Lokasi (GPS) mati. Mohon nyalakan.');
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        throw Exception('Izin lokasi ditolak');
+      }
+    }
+    
+    if (permission == LocationPermission.deniedForever) {
+      throw Exception('Izin lokasi ditolak permanen. Ubah di pengaturan.');
+    }
+
+    return await Geolocator.getCurrentPosition();
   }
 }

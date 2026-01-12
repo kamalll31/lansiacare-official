@@ -1,10 +1,14 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
-from app.models import EmergencyContact, User, UserProfile
+from app.models import EmergencyContact, User, UserProfile, FamilyConnection, SystemLog
 import datetime
 
 emergency_bp = Blueprint('emergency', __name__)
+
+# ==============================================================================
+# CRUD CONTACTS (Logika Lama Anda - Tetap Dipertahankan)
+# ==============================================================================
 
 @emergency_bp.route('/contacts', methods=['GET'])
 @jwt_required()
@@ -138,56 +142,6 @@ def delete_emergency_contact(contact_id):
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
-@emergency_bp.route('/sos', methods=['POST'])
-@jwt_required()
-def trigger_sos():
-    try:
-        user_id = get_jwt_identity()
-        user = User.query.get(user_id)
-        user_profile = UserProfile.query.filter_by(user_id=user_id).first()
-        
-        # Get emergency contacts
-        contacts = EmergencyContact.query.filter_by(lansia_user_id=user_id).all()
-        
-        if not contacts:
-            return jsonify({'error': 'Tidak ada kontak darurat yang terdaftar'}), 400
-        
-        # Prepare emergency data
-        emergency_data = {
-            'user_id': user_id,
-            'user_name': user_profile.full_name if user_profile else 'Unknown',
-            'phone': user.phone,
-            'timestamp': datetime.datetime.utcnow().isoformat(),
-            'contacts_notified': [],
-            'message': 'SOS emergency alert triggered'
-        }
-        
-        # Simulate notification to contacts
-        for contact in contacts:
-            emergency_data['contacts_notified'].append({
-                'name': contact.contact_name,
-                'phone': contact.phone,
-                'relationship': contact.relationship,
-                'is_primary': contact.is_primary
-            })
-            
-            # TODO: Implement actual SMS/WhatsApp notification
-            print(f"EMERGENCY ALERT to {contact.contact_name} ({contact.phone}): "
-                  f"SOS from {emergency_data['user_name']} at {emergency_data['timestamp']}")
-        
-        print(f"EMERGENCY SOS TRIGGERED: {emergency_data}")
-        
-        return jsonify({
-            'message': 'SOS alert telah dikirim ke kontak darurat',
-            'emergency_id': 'sos_' + datetime.datetime.utcnow().strftime('%Y%m%d_%H%M%S'),
-            'timestamp': emergency_data['timestamp'],
-            'contacts_notified': len(emergency_data['contacts_notified']),
-            'details': emergency_data
-        }), 200
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
 @emergency_bp.route('/contacts/stats', methods=['GET'])
 @jwt_required()
 def get_contacts_stats():
@@ -204,3 +158,87 @@ def get_contacts_stats():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+# ==============================================================================
+# LOGIKA SOS BARU (HYBRID: FAMILY + MANUAL)
+# ==============================================================================
+
+@emergency_bp.route('/sos', methods=['POST'])
+@jwt_required()
+def trigger_sos():
+    try:
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id)
+        user_profile = UserProfile.query.filter_by(user_id=user_id).first()
+        data = request.get_json() or {}
+        
+        lat = data.get('latitude')
+        long = data.get('longitude')
+        
+        # 1. LOGGING SYSTEM (Catat Kejadian)
+        details = f"SOS Ditekan! Koordinat: {lat}, {long}"
+        new_log = SystemLog(
+            user_id=user_id,
+            action="EMERGENCY_SOS",
+            details=details,
+            ip_address=request.remote_addr
+        )
+        db.session.add(new_log)
+        
+        # 2. HYBRID CONTACT SEARCH (PENCARIAN KONTAK GABUNGAN)
+        sos_targets = []
+
+        # A. Cari dari Koneksi Keluarga (Prioritas Utama - Punya Aplikasi)
+        family_conns = FamilyConnection.query.filter_by(
+            lansia_user_id=user_id, 
+            is_verified=True
+        ).all()
+        
+        for conn in family_conns:
+            fam_user = User.query.get(conn.family_user_id)
+            if fam_user:
+                sos_targets.append({
+                    'source': 'family_app',
+                    'name': fam_user.profile.full_name if fam_user.profile else "Keluarga",
+                    'phone': fam_user.phone,
+                    'is_primary': True # Anggap keluarga app selalu primary
+                })
+
+        # B. Cari dari Kontak Darurat Manual (Cadangan - Tetangga/Dokter)
+        manual_contacts = EmergencyContact.query.filter_by(lansia_user_id=user_id).all()
+        
+        for contact in manual_contacts:
+            sos_targets.append({
+                'source': 'manual_contact',
+                'name': contact.contact_name,
+                'phone': contact.phone,
+                'is_primary': contact.is_primary
+            })
+
+        db.session.commit()
+
+        # 3. KIRIM RESPON KE FLUTTER
+        if not sos_targets:
+            return jsonify({
+                'success': False, 
+                'message': 'Tidak ada kontak keluarga atau darurat yang ditemukan. Harap hubungkan keluarga terlebih dahulu.'
+            }), 404
+        
+        # Siapkan data respon
+        user_name = user_profile.full_name if user_profile else 'Unknown'
+        timestamp = datetime.datetime.utcnow().isoformat()
+        
+        print(f"EMERGENCY SOS TRIGGERED by {user_name}: {len(sos_targets)} targets found.")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Sinyal SOS tercatat',
+            'emergency_id': 'sos_' + datetime.datetime.utcnow().strftime('%Y%m%d_%H%M%S'),
+            'timestamp': timestamp,
+            'contacts_notified': len(sos_targets),
+            'targets': sos_targets # DAFTAR TARGET DIKIRIM KE FLUTTER
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
