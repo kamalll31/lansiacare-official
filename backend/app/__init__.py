@@ -76,7 +76,7 @@ def create_app():
     def setup_database_and_admin():
         try:
             # Uncomment baris di bawah ini jika ingin mereset total database
-            # db.drop_all() 
+             db.drop_all() 
             
             # Buat tabel baru jika belum ada
             db.create_all()

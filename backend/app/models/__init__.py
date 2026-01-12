@@ -107,13 +107,16 @@ class FamilyConnection(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     __table_args__ = (db.UniqueConstraint('lansia_user_id', 'family_user_id', name='uq_family_connection'),)
 
+# [FIX] PERBAIKAN PENTING DI SINI
 class EmergencyContact(db.Model):
     __tablename__ = 'emergency_contacts'
     id = db.Column(db.Integer, primary_key=True)
-    lansia_user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    # [FIX 1] Mengganti 'lansia_user_id' -> 'user_id' agar standar
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     name = db.Column(db.String(100), nullable=False)
     phone = db.Column(db.String(20), nullable=False)
-    relation = db.Column(db.String(50)) 
+    # [FIX 2] Mengganti 'relation' -> 'relationship' agar sama dengan Controller
+    relationship = db.Column(db.String(50)) 
     is_primary = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -305,6 +308,7 @@ def setup_relationships():
     User.daily_tasks = db.relationship('DailyTask', backref='user', lazy='dynamic', cascade='all, delete-orphan')
     User.medications = db.relationship('Medication', backref='user', lazy='dynamic', cascade='all, delete-orphan')
     
+    # [FIX 3] Update relasi EmergencyContact sesuai perubahan kolom 'user_id'
     User.emergency_contacts = db.relationship('EmergencyContact', backref='lansia', lazy='dynamic', cascade='all, delete-orphan')
     
     ContentItem.transcripts = db.relationship('ContentTranscript', backref='content_item', lazy='dynamic', cascade='all, delete-orphan')
