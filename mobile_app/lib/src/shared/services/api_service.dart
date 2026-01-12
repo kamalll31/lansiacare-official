@@ -1,12 +1,13 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io' show Platform; // Tetap import ini untuk Mobile
+import 'package:flutter/foundation.dart'; // [PENTING] Import ini untuk kIsWeb
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   
   // ===========================================================================
-  // 1. KONFIGURASI URL (SMART SWITCH)
+  // 1. KONFIGURASI URL (WEB & MOBILE SAFE)
   // ===========================================================================
   
   // Ganti FALSE jika ingin tes ke server Vercel (Produksi)
@@ -18,12 +19,24 @@ class ApiService {
       return 'https://lansiacare-backend.vercel.app/api/v1';
     }
 
-    // URL LOKAL (Development)
-    if (Platform.isAndroid) {
-      // Emulator Android pakai 10.0.2.2 untuk akses localhost laptop
-      return 'http://10.0.2.2:5000/api/v1';
-    } else {
-      // iOS / Web / Desktop pakai localhost biasa
+    // [FIX KHUSUS WEB] Cek apakah dijalankan di Browser
+    // Platform.isAndroid akan error jika dijalankan di Web, jadi kita cek kIsWeb dulu.
+    if (kIsWeb) {
+      // Untuk Web Browser (Chrome/Edge), localhost adalah 127.0.0.1
+      return 'http://127.0.0.1:5000/api/v1';
+    }
+
+    // [LOGIC MOBILE] Hanya dijalankan jika BUKAN Web
+    try {
+      if (Platform.isAndroid) {
+        // Emulator Android pakai 10.0.2.2 untuk akses localhost laptop
+        return 'http://10.0.2.2:5000/api/v1';
+      } else {
+        // iOS Simulator / Desktop App
+        return 'http://127.0.0.1:5000/api/v1';
+      }
+    } catch (e) {
+      // Fallback aman
       return 'http://127.0.0.1:5000/api/v1';
     }
   }
@@ -39,12 +52,14 @@ class ApiService {
       
       return {
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
         if (token.isNotEmpty) 'Authorization': 'Bearer $token',
       };
     } catch (e) {
       print('DEBUG: Error getting headers: $e');
       return {
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
       };
     }
   }
@@ -66,7 +81,7 @@ class ApiService {
       final url = '$baseUrl$endpoint';
       
       print('DEBUG: 🔵 POST to $url');
-      print('DEBUG: 📦 Payload: $data');
+      // print('DEBUG: 📦 Payload: $data'); // Uncomment jika butuh log payload
       
       final response = await http.post(
         Uri.parse(url),
@@ -79,7 +94,7 @@ class ApiService {
 
     } catch (e) {
       print('DEBUG: 🔴 POST Error: $e');
-      throw Exception('Gagal terhubung ke server. Cek koneksi Anda.');
+      throw Exception('Gagal terhubung ke server.');
     }
   }
   
@@ -196,8 +211,7 @@ class ApiService {
 
   // --- SOS & MONITORING ---
   static Future<http.Response> triggerSOS() {
-    // Kirim lat/long dummy jika belum ada GPS real, 
-    // atau biarkan null (backend handle)
+    // Kirim SOS signal
     return post('/emergency/sos', {}); 
   }
 
@@ -217,7 +231,7 @@ class ApiService {
 
   // B. Event Komunitas
   static Future<http.Response> getActivities({Map<String, String>? queryParams}) {
-    // Endpoint ini mengarah ke root /activities (sesuai activities.py backend)
+    // Endpoint ini mengarah ke root /activities
     String endpoint = '/activities';
     if (queryParams != null && queryParams.isNotEmpty) {
       final queryString = Uri(queryParameters: queryParams).query;
@@ -274,13 +288,16 @@ class ApiService {
   // --- UTILS ---
   static Future<bool> checkConnection() async {
     try {
+      // Coba akses endpoint health check
+      // Jika /health belum ada di backend, ganti ke /auth/login (GET)
       final response = await http.get(
-        Uri.parse('$baseUrl/auth/login'), // Sengaja salah method (GET) untuk cek server hidup
+        Uri.parse('$baseUrl/auth/login'), 
         headers: {'Content-Type': 'application/json'},
       ).timeout(const Duration(seconds: 5));
       
       // Jika server merespon (walau 405 Method Not Allowed), berarti koneksi OK
-      return response.statusCode != 404; 
+      // 404 berarti endpoint tidak ketemu, 500 error server
+      return response.statusCode != 0; 
     } catch (e) {
       print('DEBUG: Connection check failed: $e');
       return false;

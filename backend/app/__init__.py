@@ -55,17 +55,19 @@ def create_app():
             pass
     
     # ==================================================================
-    # 3. KONFIGURASI CORS
+    # 3. KONFIGURASI CORS (WEB FRIENDLY)
     # ==================================================================
-    CORS(app, 
-         resources={
-             r"/api/*": {
-                 "origins": "*", 
-                 "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-                 "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
-                 "max_age": 3600
-             }
-         })
+    # Mengizinkan semua origin (*) agar Flutter Web (localhost:port_acak) bisa akses
+    CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+
+    # Tambahan: Memaksa header CORS di setiap response
+    # Ini solusi ampuh untuk error 'ClientException: Failed to fetch'
+    @app.after_request
+    def after_request(response):
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+        return response
 
     # ==================================================================
     # [FITUR DARURAT] SETUP DATABASE & RESET TOTAL
