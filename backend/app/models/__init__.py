@@ -101,8 +101,14 @@ class FamilyConnection(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     lansia_user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     family_user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    status = db.Column(db.String(20), default='pending') 
+    
+    # [KOLOM BARU YANG DIBUTUHKAN API FAMILY.PY]
+    relationship = db.Column(db.String(50))           # Hubungan (Anak, Cucu, dll)
+    access_level = db.Column(db.String(20), default='basic') # Hak akses
+    is_verified = db.Column(db.Boolean, default=False)       # Pengganti status 'pending'
+    
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
     __table_args__ = (db.UniqueConstraint('lansia_user_id', 'family_user_id', name='uq_family_connection'),)
 
 class EmergencyContact(db.Model):
