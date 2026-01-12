@@ -125,7 +125,7 @@ def create_app():
     except ImportError as e:
          print(f"⚠️ Warning: Users Blueprint Import Error: {e}")
     
-    # 3. Activities Routes (PENTING: INI YANG SEBELUMNYA KURANG)
+    # 3. Activities Routes
     try:
         from app.api.v1.activities import activities_bp
         app.register_blueprint(activities_bp, url_prefix='/api/v1/activities')
@@ -146,11 +146,12 @@ def create_app():
     except ImportError as e:
          print(f"⚠️ Warning: Content Blueprint Import Error: {e}")
     
-    # 6. Family Routes (Optional)
+    # 6. Family Routes (UPDATED - Pastikan file family.py sudah ada)
     try:
         from app.api.v1.family import family_bp
         app.register_blueprint(family_bp, url_prefix='/api/v1/family')
-    except ImportError: pass
+    except ImportError as e:
+         print(f"⚠️ Warning: Family Blueprint Import Error: {e}")
 
     # 7. Emergency Routes (Optional)
     try:
