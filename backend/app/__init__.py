@@ -75,12 +75,14 @@ def create_app():
     @app.route('/setup-db-darurat')
     def setup_database_and_admin():
         try:
-            # Uncomment baris di bawah ini jika ingin mereset total database
-             db.drop_all() 
+            # [RESET DATABASE]
+            # Hapus tanda komentar pada db.drop_all() untuk mereset database
+            # PENTING: Ini akan menghapus semua data lama!
+            db.drop_all()  # <--- UNCOMMENTED FOR RESET
             
-            # Buat tabel baru jika belum ada
+            # Buat tabel baru dengan struktur yang benar
             db.create_all()
-            status_msg = ["♻️ Database tables created/verified."]
+            status_msg = ["♻️ Database tables reset and recreated."]
 
             # Import model di dalam fungsi untuk menghindari circular import
             from app.models import User, UserProfile
@@ -134,7 +136,7 @@ def create_app():
 
     # 2. Users Routes
     try:
-        from app.api.v1.users import users_bp # Pastikan file app/api/v1/users.py ADA
+        from app.api.v1.users import users_bp 
         app.register_blueprint(users_bp, url_prefix='/api/v1/users')
     except ImportError as e:
          print(f"⚠️ Warning: Users Blueprint Import Error: {e}")
