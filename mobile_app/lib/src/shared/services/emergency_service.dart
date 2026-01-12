@@ -132,8 +132,8 @@ class EmergencyService {
             phone = '62${phone.substring(1)}';
           }
 
-          // Buat Link Google Maps
-          String googleMapsLink = "https://www.google.com/maps/search/?api=1&query=${position.latitude},${position.longitude}";
+          // Buat Link Google Maps (FIXED INTERPOLATION)
+          String googleMapsLink = "http://maps.google.com/?q=${position.latitude},${position.longitude}";
           
           // Pesan Default
           String message = "🚨 *SOS DARURAT!* 🚨\n\nSaya butuh bantuan segera!\nNama Kontak: $name\n📍 Lokasi Saya: $googleMapsLink";
@@ -193,8 +193,6 @@ class EmergencyService {
 
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      // Jika GPS mati, coba minta nyalakan atau throw error
-      // Untuk demo, kita throw error simple
       throw Exception('Layanan Lokasi (GPS) mati. Mohon nyalakan.');
     }
 

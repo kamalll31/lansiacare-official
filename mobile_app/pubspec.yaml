@@ -15,6 +15,9 @@ dependencies:
   http: ^1.1.0
   shared_preferences: ^2.2.2
   provider: ^6.1.1
+  # TAMBAHKAN INI (WAJIB UNTUK SOS)
+  url_launcher: ^6.2.4
+  geolocator: ^10.1.0
 
 dev_dependencies:
   flutter_test:
@@ -23,6 +26,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  # Hapus assets dulu untuk demo
-  # assets:
-  #   - assets/images/
