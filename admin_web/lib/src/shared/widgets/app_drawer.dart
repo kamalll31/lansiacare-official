@@ -10,6 +10,14 @@ class AppDrawer extends StatelessWidget {
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context);
 
+    // [FIX] Ambil data user dengan aman
+    // Prioritaskan nama lengkap jika ada, jika tidak pakai identifier (No HP/Email), atau default
+    final displayName = authService.currentUser?['full_name'] ?? 
+                        authService.userIdentifier ?? 
+                        'Admin';
+                        
+    final displayRole = authService.currentUser?['role']?.toString().toUpperCase() ?? 'ADMINISTRATOR';
+
     return Drawer(
       child: ListView(
         padding: EdgeInsets.zero,
@@ -17,35 +25,39 @@ class AppDrawer extends StatelessWidget {
           // User Info Header
           DrawerHeader(
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary,
+              // Gunakan warna biru tua agar senada dengan Login Screen
+              color: const Color(0xFF1E3A8A), 
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 CircleAvatar(
                   radius: 30,
                   backgroundColor: Colors.white,
                   child: Icon(
-                    Icons.person,
-                    size: 30,
-                    color: Theme.of(context).colorScheme.primary,
+                    Icons.admin_panel_settings, // Icon yang lebih profesional
+                    size: 35,
+                    color: const Color(0xFF1E3A8A),
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  'Admin Lansia Care',
-                  style: TextStyle(
+                Text(
+                  displayName, // Menampilkan Nama/No HP
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  authService.userEmail ?? 'admin@lansiacare.com',
+                  displayRole, // Menampilkan Role
                   style: const TextStyle(
                     color: Colors.white70,
-                    fontSize: 14,
+                    fontSize: 12,
+                    letterSpacing: 1.2,
                   ),
                 ),
               ],
@@ -54,37 +66,43 @@ class AppDrawer extends StatelessWidget {
           
           // Menu Items
           ListTile(
-            leading: const Icon(Icons.dashboard),
+            leading: const Icon(Icons.dashboard_outlined),
             title: const Text('Dashboard'),
             onTap: () {
+              // Tutup drawer dulu sebelum navigasi agar smooth
+              Navigator.pop(context); 
               context.go('/dashboard');
             },
           ),
           ListTile(
-            leading: const Icon(Icons.people),
+            leading: const Icon(Icons.people_outline),
             title: const Text('Pengguna'),
             onTap: () {
+              Navigator.pop(context);
               context.go('/users');
             },
           ),
           ListTile(
-            leading: const Icon(Icons.article),
+            leading: const Icon(Icons.article_outlined),
             title: const Text('Konten'),
             onTap: () {
+              Navigator.pop(context);
               context.go('/content');
             },
           ),
           ListTile(
-            leading: const Icon(Icons.emergency),
-            title: const Text('Emergency'),
+            leading: const Icon(Icons.emergency_outlined, color: Colors.red),
+            title: const Text('Emergency', style: TextStyle(color: Colors.red)),
             onTap: () {
+              Navigator.pop(context);
               context.go('/emergencies');
             },
           ),
           ListTile(
-            leading: const Icon(Icons.analytics),
+            leading: const Icon(Icons.analytics_outlined),
             title: const Text('Analytics'),
             onTap: () {
+              Navigator.pop(context);
               context.go('/analytics');
             },
           ),
@@ -94,18 +112,20 @@ class AppDrawer extends StatelessWidget {
           
           // Settings
           ListTile(
-            leading: const Icon(Icons.settings),
+            leading: const Icon(Icons.settings_outlined),
             title: const Text('Pengaturan'),
             onTap: () {
+              Navigator.pop(context);
               // TODO: Navigate to settings
             },
           ),
           
           // Logout
           ListTile(
-            leading: const Icon(Icons.logout),
-            title: const Text('Logout'),
+            leading: const Icon(Icons.logout, color: Colors.grey),
+            title: const Text('Logout', style: TextStyle(color: Colors.grey)),
             onTap: () {
+              Navigator.pop(context); // Tutup drawer
               authService.logout();
               context.go('/login');
             },
