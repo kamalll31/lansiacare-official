@@ -55,6 +55,9 @@ class ServicesScreen extends StatelessWidget {
               {'title': 'Nomor Penting', 'desc': 'Daftar telepon darurat', 'icon': Icons.contact_phone},
             ],
           ),
+          
+          // Spacer untuk menghindari tertutup floating button jika ada
+          const SizedBox(height: 40),
         ],
       ),
     );
@@ -85,7 +88,7 @@ class ServicesScreen extends StatelessWidget {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: ListView.separated(
             shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
+            physics: const NeverScrollableScrollPhysics(), // Scroll mengikuti parent
             itemCount: services.length,
             separatorBuilder: (ctx, i) => const Divider(height: 1, indent: 60),
             itemBuilder: (ctx, i) {
@@ -111,44 +114,66 @@ class ServicesScreen extends StatelessWidget {
   void _showDetail(BuildContext context, String title, String desc, IconData icon, Color color) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true, // [FIX] Agar tinggi menyesuaikan konten dan tidak overflow
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
-              child: Icon(icon, size: 40, color: color),
-            ),
-            const SizedBox(height: 16),
-            Text(title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text(desc, textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.grey[600])),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: Colors.orange[50], borderRadius: BorderRadius.circular(8)),
-              child: Row(
-                children: [
-                  Icon(Icons.info_outline, color: Colors.orange[800]),
-                  const SizedBox(width: 12),
-                  Expanded(child: Text("Fitur ini sedang dalam pengembangan dan akan segera hadir.", style: TextStyle(color: Colors.orange[900]))),
-                ],
+      builder: (context) => DraggableScrollableSheet( // [FIX] Bisa di-drag
+        initialChildSize: 0.5, // Setengah layar
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (context, scrollController) => SingleChildScrollView( // [FIX] Tambahkan Scroll
+          controller: scrollController,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
               ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white),
-                child: const Text("Tutup"),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+                child: Icon(icon, size: 40, color: color),
               ),
-            )
-          ],
+              const SizedBox(height: 16),
+              Text(title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text(desc, textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.grey[600])),
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: Colors.orange[50], borderRadius: BorderRadius.circular(8)),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start, // [FIX] Alignment start
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.orange[800]),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        "Fitur ini sedang dalam pengembangan dan akan segera hadir. Nantikan update selanjutnya!",
+                        style: TextStyle(color: Colors.orange[900]),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white),
+                  child: const Text("Tutup"),
+                ),
+              ),
+              // Tambahan padding bawah untuk safe area
+              SizedBox(height: MediaQuery.of(context).viewInsets.bottom + 20),
+            ],
+          ),
         ),
       ),
     );

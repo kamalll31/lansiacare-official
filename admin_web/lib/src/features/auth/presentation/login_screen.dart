@@ -12,16 +12,17 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  // Masih menggunakan nama variabel _emailController agar tidak error di bagian lain,
-  // tapi fungsinya sekarang menampung Email ATAU Nomor HP.
-  final _emailController = TextEditingController();
+  
+  // [FIX] Rename controller agar sesuai konteks (Phone)
+  final _phoneController = TextEditingController(); 
   final _passwordController = TextEditingController();
+  
   bool _isLoading = false;
   bool _obscurePassword = true;
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -33,21 +34,22 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final authService = Provider.of<AuthService>(context, listen: false);
       
-      // Mengirim input ke AuthService (bisa berupa Email atau No HP)
+      // Mengirim input ke AuthService
       final success = await authService.login(
-        _emailController.text.trim(),
+        _phoneController.text.trim(), // Gunakan controller phone
         _passwordController.text,
       );
 
       if (success) {
         if (context.mounted) {
+          // Redirect ke dashboard jika sukses
           context.go('/dashboard');
         }
       } else {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Login gagal, periksa kredensial Anda'),
+              content: Text('Login gagal. Periksa Nomor HP atau Password Anda.'),
               backgroundColor: Colors.red,
             ),
           );
@@ -57,7 +59,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text('Terjadi kesalahan: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -84,8 +86,8 @@ class _LoginScreenState extends State<LoginScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              Color(0xFF2196F3),
-              Color(0xFF21CBF3),
+              Color(0xFF1E3A8A), // Blue 900 (Professional look)
+              Color(0xFF3B82F6), // Blue 500
             ],
           ),
         ),
@@ -107,7 +109,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        // Logo atau Icon
+                        // Logo
                         Container(
                           width: 80,
                           height: 80,
@@ -116,10 +118,10 @@ class _LoginScreenState extends State<LoginScreen> {
                             color: Colors.blue.shade50,
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(
-                            Icons.medical_services,
+                          child: Icon(
+                            Icons.admin_panel_settings, // Icon Admin lebih relevan
                             size: 40,
-                            color: Color(0xFF2196F3),
+                            color: Colors.blue.shade800,
                           ),
                         ),
                         
@@ -128,13 +130,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           'Lansia Care Admin',
                           style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                             fontWeight: FontWeight.bold,
-                            color: Colors.blue.shade800,
+                            color: Colors.blue.shade900,
                           ),
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Masuk ke Dashboard Admin',
+                          'Masuk untuk memantau sistem',
                           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                             color: Colors.grey.shade600,
                           ),
@@ -142,17 +144,14 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 32),
                         
-                        // ==========================================
-                        // FIELD EMAIL / NO HP (YANG DIPERBAIKI)
-                        // ==========================================
+                        // Field Nomor HP
                         TextFormField(
-                          controller: _emailController,
-                          // Keyboard text biasa agar support angka & huruf
-                          keyboardType: TextInputType.text, 
+                          controller: _phoneController,
+                          keyboardType: TextInputType.phone, // Keyboard angka
                           decoration: InputDecoration(
-                            labelText: 'Email atau Nomor HP', // Label diperjelas
-                            hintText: 'Contoh: 08123456789', // Hint membantu user
-                            prefixIcon: const Icon(Icons.person_outline), // Icon netral
+                            labelText: 'Nomor HP Admin',
+                            hintText: 'Contoh: 08123456789',
+                            prefixIcon: const Icon(Icons.phone_android),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
@@ -161,16 +160,18 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           validator: (value) {
                             if (value == null || value.isEmpty) {
-                              return 'Identitas tidak boleh kosong';
+                              return 'Nomor HP wajib diisi';
                             }
-                            // HAPUS VALIDASI contains('@') dan ('.')
-                            // Biarkan kosong agar No HP bisa lolos
+                            // Validasi sederhana: harus angka
+                            if (!RegExp(r'^[0-9]+$').hasMatch(value)) {
+                              return 'Hanya boleh berisi angka';
+                            }
                             return null;
                           },
                         ),
                         const SizedBox(height: 20),
                         
-                        // Password Field
+                        // Field Password
                         TextFormField(
                           controller: _passwordController,
                           decoration: InputDecoration(
@@ -195,9 +196,6 @@ class _LoginScreenState extends State<LoginScreen> {
                             if (value == null || value.isEmpty) {
                               return 'Password tidak boleh kosong';
                             }
-                            if (value.length < 6) {
-                              return 'Password minimal 6 karakter';
-                            }
                             return null;
                           },
                         ),
@@ -207,7 +205,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ElevatedButton(
                           onPressed: _isLoading ? null : _login,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2196F3),
+                            backgroundColor: Colors.blue.shade800,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
@@ -225,7 +223,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                 )
                               : const Text(
-                                  'MASUK',
+                                  'MASUK DASHBOARD',
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16,
@@ -235,7 +233,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         
                         const SizedBox(height: 20),
                         
-                        // Version Info
+                        // Footer
                         Align(
                           alignment: Alignment.center,
                           child: Text(

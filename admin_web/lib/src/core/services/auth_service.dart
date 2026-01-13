@@ -1,15 +1,15 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:admin_web/src/core/config/app_config.dart';
+import 'package:admin_web/src/core/services/api_service.dart';
 
 class AuthService extends ChangeNotifier {
-  final Dio _dio = Dio();
+  // [FIX] Kita hapus Dio internal. Kita pakai ApiService singleton.
+  final ApiService _apiService = ApiService();
   
   String? _token;
   bool _isAuthenticated = false;
-  String? _userEmail;
+  String? _userIdentifier; // Bisa Phone atau Email
   Map<String, dynamic>? _currentUser;
 
   AuthService() {
@@ -21,27 +21,18 @@ class AuthService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     
     _token = prefs.getString('auth_token');
-    _userEmail = prefs.getString('user_email');
+    _userIdentifier = prefs.getString('user_identifier'); // Generalisasi nama variabel
     final userJson = prefs.getString('current_user');
-
-    // Konfigurasi DIO (Base URL & Timeouts)
-    _dio.options.baseUrl = AppConfig.apiBaseUrl;
-    _dio.options.connectTimeout = AppConfig.connectionTimeout;
-    _dio.options.receiveTimeout = AppConfig.apiTimeout;
-    _dio.options.headers['Accept'] = 'application/json';
 
     if (_token != null && _token!.isNotEmpty) {
       _isAuthenticated = true;
-      
-      // Set Header Authorization otomatis agar request berikutnya valid
-      _dio.options.headers['Authorization'] = 'Bearer $_token';
 
+      // Restore data user jika ada
       if (userJson != null) {
         try {
           _currentUser = json.decode(userJson);
         } catch (e) {
           debugPrint('Error parsing user json: $e');
-          // Jika data user rusak, anggap logout demi keamanan
           await logout(); 
         }
       }
@@ -51,61 +42,49 @@ class AuthService extends ChangeNotifier {
   }
 
   /// Fungsi Login Utama
-  Future<bool> login(String email, String password) async {
+  /// [FIX] Mengubah parameter 'email' menjadi 'phone' agar sesuai dengan Backend Admin
+  Future<bool> login(String phone, String password) async {
     final prefs = await SharedPreferences.getInstance();
 
     try {
-      // 🟢 [FIX UTAMA] .trim()
-      // Membersihkan spasi di awal/akhir input yang sering tidak sengaja tertulis
-      final cleanEmail = email.trim();
+      final cleanPhone = phone.trim();
       final cleanPassword = password.trim(); 
 
-      // Request ke Server Asli
-      final response = await _dio.post('/api/v1/auth/login', data: {
-        'email': cleanEmail,
+      // [FIX] Gunakan ApiService.post, bukan _dio.post
+      // Backend mengharapkan 'phone', bukan 'email' sesuai seed data admin
+      final response = await _apiService.post('/api/v1/auth/login', data: {
+        'phone': cleanPhone, 
         'password': cleanPassword,
       });
 
-      if (response.statusCode == 200) {
-        final data = response.data;
-        
-        // 1. Ambil Token (Support berbagai format response)
-        _token = data['access_token'] ?? data['token'];
-        
-        // 2. Ambil Data User
-        if (data['user'] != null) {
-          _currentUser = data['user'];
-        } else if (data['data'] != null && data['data']['user'] != null) {
-          _currentUser = data['data']['user'];
-        }
-
-        // 3. Set State Lokal
-        _userEmail = cleanEmail;
-        _isAuthenticated = true;
-
-        // 4. Simpan ke Penyimpanan Lokal (Persistensi)
-        if (_token != null) await prefs.setString('auth_token', _token!);
-        if (_userEmail != null) await prefs.setString('user_email', _userEmail!);
-        if (_currentUser != null) await prefs.setString('current_user', json.encode(_currentUser));
-
-        // 5. Update Header Dio
-        if (_token != null) {
-          _dio.options.headers['Authorization'] = 'Bearer $_token';
-        }
-        
-        notifyListeners();
-        return true;
-      }
+      // ApiService akan melempar error jika status != 2xx, jadi jika sampai sini berarti sukses
+      final data = response.data;
       
-      return false;
+      // 1. Ambil Token
+      _token = data['access_token'] ?? data['token'];
+      
+      // 2. Ambil Data User
+      if (data['user'] != null) {
+        _currentUser = data['user'];
+      } else if (data['data'] != null && data['data']['user'] != null) {
+        _currentUser = data['data']['user'];
+      }
+
+      // 3. Set State Lokal
+      _userIdentifier = cleanPhone;
+      _isAuthenticated = true;
+
+      // 4. Simpan ke Penyimpanan Lokal (PENTING untuk ApiService Interceptor)
+      if (_token != null) await prefs.setString('auth_token', _token!);
+      if (_userIdentifier != null) await prefs.setString('user_identifier', _userIdentifier!);
+      if (_currentUser != null) await prefs.setString('current_user', json.encode(_currentUser));
+
+      notifyListeners();
+      return true;
 
     } catch (e) {
       if (kDebugMode) {
-        print('🔥 Login Error: $e');
-        if (e is DioException) {
-          print('🔥 Dio Error Response: ${e.response?.data}');
-          print('🔥 Dio Error Status: ${e.response?.statusCode}');
-        }
+        print('🔥 Login Service Error: $e');
       }
       return false;
     }
@@ -115,29 +94,33 @@ class AuthService extends ChangeNotifier {
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
     
-    // Hapus semua data sesi dari HP/Browser
-    await prefs.clear();
+    // Hapus data dari disk
+    await prefs.remove('auth_token');
+    await prefs.remove('user_identifier');
+    await prefs.remove('current_user');
+    await prefs.clear(); // Opsional: Hapus semua jika perlu
 
     // Reset variabel di memori
     _token = null;
-    _userEmail = null;
+    _userIdentifier = null;
     _currentUser = null;
     _isAuthenticated = false;
-    
-    // Hapus header Authorization agar request selanjutnya ditolak (aman)
-    _dio.options.headers.remove('Authorization');
     
     notifyListeners();
   }
 
-  // Getters & Setters
+  // Getters
   bool get isAuthenticated => _isAuthenticated;
-  String? get userEmail => _userEmail;
+  String? get userIdentifier => _userIdentifier;
   String? get token => _token;
   Map<String, dynamic>? get currentUser => _currentUser;
 
+  // Helper untuk update data user tanpa login ulang
   void updateCurrentUser(Map<String, dynamic> userData) {
     _currentUser = userData;
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('current_user', json.encode(_currentUser));
+    });
     notifyListeners();
   }
 }

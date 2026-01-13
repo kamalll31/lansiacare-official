@@ -10,8 +10,14 @@ class ApiService {
   late Dio _dio;
   
   ApiService._internal() {
+    // [FIX] Ensure base URL does not have a trailing slash to avoid double slashes
+    String baseUrl = AppConfig.apiBaseUrl;
+    if (baseUrl.endsWith('/')) {
+      baseUrl = baseUrl.substring(0, baseUrl.length - 1);
+    }
+
     _dio = Dio(BaseOptions(
-      baseUrl: AppConfig.apiBaseUrl, 
+      baseUrl: baseUrl, 
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(seconds: 30),
       headers: {
@@ -36,7 +42,10 @@ class ApiService {
         if (kDebugMode) {
           print('🚀 [${options.method}] ${options.uri}');
           if (options.data != null) {
-            print('📤 Data: ${options.data}');
+            // [FIX] Truncate long data logs for cleaner console output
+            String dataStr = options.data.toString();
+            if (dataStr.length > 500) dataStr = '${dataStr.substring(0, 500)}...';
+            print('📤 Data: $dataStr');
           }
         }
         
@@ -46,7 +55,6 @@ class ApiService {
       onResponse: (response, handler) {
         if (kDebugMode) {
           print('✅ [${response.statusCode}] ${response.requestOptions.uri}');
-          print('📦 Response Type: ${response.data.runtimeType}');
         }
         return handler.next(response);
       },
@@ -54,12 +62,10 @@ class ApiService {
       onError: (DioException e, handler) async {
         if (kDebugMode) {
           print('❌ [${e.response?.statusCode}] ${e.requestOptions.method} ${e.requestOptions.uri}');
-          print('📝 Error Type: ${e.type}');
           print('📝 Error Message: ${e.message}');
           
           if (e.response != null) {
             print('📝 Response Data: ${e.response?.data}');
-            print('📝 Response Headers: ${e.response?.headers}');
           }
         }
         
@@ -67,8 +73,7 @@ class ApiService {
           if (kDebugMode) print('⚠️ Unauthorized - Token Expired');
           final prefs = await SharedPreferences.getInstance();
           await prefs.remove('auth_token');
-          
-          // You might want to trigger a logout event here
+          // Note: Ideally, emit a global event here to redirect to login
         }
         
         return handler.next(e);
@@ -77,7 +82,7 @@ class ApiService {
   }
   
   // =================================================================
-  // GENERIC HTTP METHODS WITH BETTER ERROR HANDLING
+  // GENERIC HTTP METHODS
   // =================================================================
   Future<Response> get(String path, {Map<String, dynamic>? queryParameters, Options? options}) async {
     try {
@@ -136,16 +141,13 @@ class ApiService {
   }
 
   // =================================================================
-  // SPECIFIC ENDPOINTS - VALIDATED AND TESTED
+  // SPECIFIC ENDPOINTS
   // =================================================================
 
   // --- HEALTH CHECK ---
-  Future<Response> checkHealth() {
-    return get('/api/v1/health');
-  }
+  Future<Response> checkHealth() => get('/api/v1/health');
   
-  // --- CONTENT ITEMS (CRITICAL - MUST MATCH BACKEND) ---
-  
+  // --- CONTENT ITEMS ---
   Future<Response> getContentItems({ 
     int page = 1,
     int perPage = 10,
@@ -172,15 +174,8 @@ class ApiService {
   }
   
   Future<Response> analyzeUrl(String url) {
-    // Validate URL before sending
-    if (url.isEmpty) {
-      throw ArgumentError('URL cannot be empty');
-    }
-    
-    if (!url.startsWith('http')) {
-      throw ArgumentError('URL must start with http:// or https://');
-    }
-    
+    if (url.isEmpty) throw ArgumentError('URL cannot be empty');
+    if (!url.startsWith('http')) throw ArgumentError('URL must start with http:// or https://');
     return post('/api/v1/content/admin/analyze-url', data: {'url': url});
   }
 
@@ -200,20 +195,15 @@ class ApiService {
     return post('/api/v1/content/admin/upload', data: data);
   }
 
-  // Get content detail (added for completeness)
   Future<Response> getContentDetail(int contentId) {
     return get('/api/v1/content/admin/items/$contentId');
   }
   
-  // Get content stats
   Future<Response> getContentStats() {
     return get('/api/v1/content/admin/stats');
   }
 
-  // =================================================================
-  // ADMIN ENDPOINTS
-  // =================================================================
-  
+  // --- DASHBOARD & USERS ---
   Future<Response> getDashboardStats() {
     return get('/api/v1/admin/dashboard/stats'); 
   }
@@ -249,32 +239,14 @@ class ApiService {
     return get('/api/v1/admin/logs', queryParameters: query);
   }
   
+  // --- EMERGENCIES ---
   Future<Response> getRecentEmergencies() {
-    return get('/api/v1/admin/emergencies/recent');
+    return get('/api/v1/emergency/monitor'); // Updated to correct monitoring endpoint
   }
   
   // --- ANALYTICS ---
   Future<Response> getUserEngagement() => get('/api/v1/admin/analytics/user-engagement');
   Future<Response> getContentPerformance() => get('/api/v1/admin/analytics/content-performance');
-  
-  // =================================================================
-  // DEBUG METHODS
-  // =================================================================
-  
-  void printAllEndpoints() {
-    if (kDebugMode) {
-      print('📋 API Service Endpoints:');
-      print('   Health: /api/v1/health');
-      print('   Content Items: /api/v1/content/admin/items');
-      print('   Analyze URL: /api/v1/content/admin/analyze-url');
-      print('   Upload: /api/v1/content/admin/upload');
-      print('   Content Stats: /api/v1/content/admin/stats');
-      print('   Dashboard: /api/v1/admin/dashboard/stats');
-      print('   Users: /api/v1/admin/users');
-    }
-  }
-  
-  String getBaseUrl() {
-    return _dio.options.baseUrl;
-  }
+
+  String getBaseUrl() => _dio.options.baseUrl;
 }
