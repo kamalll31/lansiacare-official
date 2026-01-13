@@ -38,13 +38,13 @@ def get_dashboard_stats():
         # Statistik konten
         total_content = ContentItem.query.count()
         
-        # [FIX - PERBAIKAN UTAMA DISINI]
-        # Menggunakan 'user_id', BUKAN 'lansia_user_id'
+        # Emergency Contacts (Pakai user_id)
         total_emergency_contacts = EmergencyContact.query.count()
         users_with_emergency_contacts = db.session.query(EmergencyContact.user_id).distinct().count()
         
-        # [ADAPTASI DB] FamilyConnection pakai status='approved'
-        total_family_connections = FamilyConnection.query.filter_by(status='approved').count()
+        # [FIX PERBAIKAN FINAL DISINI]
+        # Menggunakan 'is_verified=True' karena kolom 'status' TIDAK ADA di models.py
+        total_family_connections = FamilyConnection.query.filter_by(is_verified=True).count()
 
         stats = {
             'total_users': total_users,
@@ -88,7 +88,6 @@ def get_users():
                 or_(User.phone.contains(search), UserProfile.full_name.contains(search))
             )
         
-        # Urutkan dari yang terbaru (ID Descending)
         users = query.order_by(User.id.desc()).paginate(page=page, per_page=per_page, error_out=False)
         
         users_data = []
@@ -125,7 +124,6 @@ def get_user_detail(user_id):
         user = User.query.get_or_404(user_id)
         
         activities_count = Activity.query.filter_by(created_by=user_id).count()
-        # [FIX] Gunakan user_id
         emergency_contacts_count = EmergencyContact.query.filter_by(user_id=user.id).count()
         
         user_data = {
@@ -182,7 +180,6 @@ def get_system_logs():
 # @jwt_required()
 def get_recent_emergencies():
     try:
-        # [ADAPTASI DB] Cari log dengan action mengandung 'EMERGENCY'
         emergencies = SystemLog.query.filter(SystemLog.action.ilike('%EMERGENCY%')).order_by(SystemLog.created_at.desc()).limit(20).all()
         
         data = []
