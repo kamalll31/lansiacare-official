@@ -1,10 +1,9 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
-# [FIX]: EmergencyContact sudah aman diimport
 from app.models import User, UserProfile, Activity, FamilyConnection, ContentItem, SystemLog, EmergencyContact
 from datetime import datetime, timedelta
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -17,13 +16,9 @@ def is_admin(user_id):
 # DASHBOARD & STATS
 # ==============================
 @admin_bp.route('/dashboard/stats', methods=['GET'])
-# @jwt_required() # Uncomment jika frontend sudah kirim token
+# @jwt_required() 
 def get_dashboard_stats():
     try:
-        # user_id = get_jwt_identity()
-        # if not is_admin(user_id):
-        #    return jsonify({'success': False, 'error': 'Hanya admin yang dapat mengakses dashboard'}), 403
-        
         # Hitung statistik dasar
         total_users = User.query.count()
         total_lansia = User.query.filter_by(role='lansia').count()
@@ -43,11 +38,12 @@ def get_dashboard_stats():
         # Statistik konten
         total_content = ContentItem.query.count()
         
-        # [FIX]: Sekarang bisa hitung real dari database karena model sudah ada
+        # [FIX - PERBAIKAN UTAMA DISINI]
+        # Menggunakan 'user_id', BUKAN 'lansia_user_id'
         total_emergency_contacts = EmergencyContact.query.count()
-        users_with_emergency_contacts = db.session.query(EmergencyContact.lansia_user_id).distinct().count()
+        users_with_emergency_contacts = db.session.query(EmergencyContact.user_id).distinct().count()
         
-        # [ADAPTASI DB] FamilyConnection pakai status='approved' bukan is_verified
+        # [ADAPTASI DB] FamilyConnection pakai status='approved'
         total_family_connections = FamilyConnection.query.filter_by(status='approved').count()
 
         stats = {
@@ -71,15 +67,12 @@ def get_dashboard_stats():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # ==============================
-# USER MANAGEMENT (LOGIKA DIPERTAHANKAN)
+# USER MANAGEMENT
 # ==============================
 @admin_bp.route('/users', methods=['GET'])
 # @jwt_required()
 def get_users():
     try:
-        # if not is_admin(get_jwt_identity()):
-        #    return jsonify({'success': False, 'error': 'Akses ditolak'}), 403
-        
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
         role_filter = request.args.get('role')
@@ -91,16 +84,15 @@ def get_users():
             query = query.filter_by(role=role_filter)
         
         if search:
-            # Join aman dengan outerjoin
             query = query.outerjoin(UserProfile).filter(
                 or_(User.phone.contains(search), UserProfile.full_name.contains(search))
             )
         
-        users = query.order_by(User.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
+        # Urutkan dari yang terbaru (ID Descending)
+        users = query.order_by(User.id.desc()).paginate(page=page, per_page=per_page, error_out=False)
         
         users_data = []
         for user in users.items:
-            # Handle user tanpa profile
             full_name = user.profile.full_name if user.profile else "Belum set profil"
             
             profile_data = {
@@ -130,14 +122,11 @@ def get_users():
 # @jwt_required()
 def get_user_detail(user_id):
     try:
-        # if not is_admin(get_jwt_identity()):
-        #    return jsonify({'success': False, 'error': 'Akses ditolak'}), 403
-        
         user = User.query.get_or_404(user_id)
         
         activities_count = Activity.query.filter_by(created_by=user_id).count()
-        # [FIX]: Hitung real contact
-        emergency_contacts_count = EmergencyContact.query.filter_by(lansia_user_id=user.id).count()
+        # [FIX] Gunakan user_id
+        emergency_contacts_count = EmergencyContact.query.filter_by(user_id=user.id).count()
         
         user_data = {
             'id': user.id,
@@ -154,18 +143,17 @@ def get_user_detail(user_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # ==============================
-# LOGS & EMERGENCY (ADAPTASI STRUKTUR DB)
+# LOGS & EMERGENCY
 # ==============================
 @admin_bp.route('/logs', methods=['GET'])
 # @jwt_required()
 def get_system_logs():
     try:
         page = request.args.get('page', 1, type=int)
-        log_type = request.args.get('type') # Frontend minta filter 'type'
+        log_type = request.args.get('type')
         
         query = SystemLog.query
         
-        # [ADAPTASI DB] Mapping filter 'type' ke kolom 'action'
         if log_type: 
             query = query.filter(SystemLog.action.ilike(f"%{log_type}%"))
         
@@ -173,7 +161,6 @@ def get_system_logs():
         
         logs_data = []
         for l in logs.items:
-            # Ambil nama user dengan aman
             user_name = 'System'
             if l.user_id:
                 u = User.query.get(l.user_id)
@@ -181,9 +168,8 @@ def get_system_logs():
 
             logs_data.append({
                 'id': l.id, 
-                # Mapping kolom DB baru ke nama field lama biar frontend gak error
-                'log_type': l.action,   # DB: action -> API: log_type
-                'message': l.details,   # DB: details -> API: message
+                'log_type': l.action,
+                'message': l.details,
                 'user_name': user_name,
                 'created_at': l.created_at.isoformat()
             })
@@ -208,7 +194,7 @@ def get_recent_emergencies():
                 
             data.append({
                 'id': e.id, 
-                'message': e.details, # Mapping details ke message
+                'message': e.details, 
                 'user_name': user_name,
                 'created_at': e.created_at.isoformat()
             })

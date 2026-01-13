@@ -15,14 +15,13 @@ emergency_bp = Blueprint('emergency', __name__)
 def get_emergency_contacts():
     try:
         current_user_id = get_jwt_identity()
-        # [FIX] Filter by user_id
         contacts = EmergencyContact.query.filter_by(user_id=current_user_id).order_by(EmergencyContact.is_primary.desc()).all()
         
         contacts_data = []
         for contact in contacts:
             contacts_data.append({
                 'id': contact.id,
-                'contactName': contact.name, # [FIX] DB uses 'name', API sends 'contactName'
+                'contactName': contact.name,
                 'phone': contact.phone,
                 'relationship': contact.relationship,
                 'isPrimary': contact.is_primary,
@@ -42,16 +41,13 @@ def add_emergency_contact():
         current_user_id = get_jwt_identity()
         data = request.get_json()
         
-        # [FIX] Validate 'contactName' from frontend
         if not data.get('contactName') or not data.get('phone'):
             return jsonify({'error': 'Nama dan telepon kontak diperlukan'}), 400
         
-        # Reset primary if needed
         if data.get('isPrimary'):
             EmergencyContact.query.filter_by(user_id=current_user_id).update({'is_primary': False})
             db.session.commit()
         
-        # [FIX] Use 'name' for DB column
         contact = EmergencyContact(
             user_id=current_user_id,
             name=data['contactName'], 
@@ -89,7 +85,6 @@ def update_emergency_contact(contact_id):
             EmergencyContact.query.filter_by(user_id=current_user_id).update({'is_primary': False})
             db.session.commit()
         
-        # [FIX] Update fields correctly
         if 'contactName' in data:
             contact.name = data['contactName']
         if 'phone' in data:
@@ -136,7 +131,7 @@ def get_contacts_stats():
         return jsonify({
             'totalContacts': total,
             'hasPrimary': primary is not None,
-            'primaryName': primary.name if primary else None # [FIX] use .name
+            'primaryName': primary.name if primary else None
         }), 200
         
     except Exception as e:
@@ -171,7 +166,7 @@ def trigger_sos():
         sos_targets = []
 
         # A. Keluarga (App User)
-        # [FIX] Use lansia_user_id here (correct for FamilyConnection)
+        # [FIX] Gunakan lansia_user_id (Untuk tabel FamilyConnection, ini BENAR)
         family_conns = FamilyConnection.query.filter_by(
             lansia_user_id=user_id, 
             is_verified=True
@@ -188,13 +183,13 @@ def trigger_sos():
                 })
 
         # B. Kontak Manual
-        # [FIX] Use user_id here (correct for EmergencyContact)
+        # [FIX] Gunakan user_id (Untuk tabel EmergencyContact, ini BENAR)
         manual_contacts = EmergencyContact.query.filter_by(user_id=user_id).all()
         
         for contact in manual_contacts:
             sos_targets.append({
                 'source': 'manual_contact',
-                'name': contact.name, # [FIX] use .name
+                'name': contact.name,
                 'phone': contact.phone,
                 'is_primary': contact.is_primary
             })
@@ -220,10 +215,39 @@ def trigger_sos():
 @jwt_required()
 def check_family_alert():
     try:
-        family_user_id = get_jwt_identity()
+        # [FITUR TAMBAHAN] Cek jika yang akses adalah Admin
+        # Admin butuh melihat SEMUA alert global
+        current_user_id = get_jwt_identity()
+        current_user = User.query.get(current_user_id)
         
+        time_threshold = datetime.datetime.utcnow() - datetime.timedelta(minutes=5)
+
+        # === LOGIKA KHUSUS ADMIN ===
+        if current_user and current_user.role == 'admin':
+            recent_alerts = SystemLog.query.filter(
+                SystemLog.action == "EMERGENCY_SOS",
+                # [FIX - PENTING] Gunakan 'created_at' bukan 'timestamp'
+                SystemLog.created_at >= time_threshold 
+            ).all()
+            
+            alerts = []
+            for alert in recent_alerts:
+                u = User.query.get(alert.user_id)
+                alerts.append({
+                    'lansia_id': alert.user_id,
+                    'name': u.profile.full_name if u and u.profile else "User",
+                    'time': alert.created_at.isoformat(),
+                    'location_info': alert.details
+                })
+            
+            return jsonify({
+                'status': 'DANGER' if alerts else 'safe', 
+                'alerts': alerts
+            }), 200
+
+        # === LOGIKA UNTUK KELUARGA (EXISTING) ===
         connections = FamilyConnection.query.filter_by(
-            family_user_id=family_user_id, 
+            family_user_id=current_user_id, 
             is_verified=True
         ).all()
         
@@ -231,13 +255,13 @@ def check_family_alert():
             return jsonify({'status': 'safe', 'message': 'Tidak ada lansia terhubung'}), 200
 
         active_alerts = []
-        time_threshold = datetime.datetime.utcnow() - datetime.timedelta(minutes=5)
         
         for conn in connections:
             recent_sos = SystemLog.query.filter(
                 SystemLog.user_id == conn.lansia_user_id,
                 SystemLog.action == "EMERGENCY_SOS",
-                SystemLog.timestamp >= time_threshold
+                # [FIX - PENTING] Gunakan 'created_at' bukan 'timestamp'
+                SystemLog.created_at >= time_threshold
             ).first()
             
             if recent_sos:
@@ -247,7 +271,8 @@ def check_family_alert():
                 active_alerts.append({
                     'lansia_id': conn.lansia_user_id,
                     'name': lansia_name,
-                    'time': recent_sos.timestamp.isoformat(),
+                    # [FIX] Gunakan 'created_at'
+                    'time': recent_sos.created_at.isoformat(),
                     'location_info': recent_sos.details
                 })
         
