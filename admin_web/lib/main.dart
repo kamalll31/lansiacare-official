@@ -97,7 +97,7 @@ class MyApp extends StatelessWidget {
         },
       ),
     );
-  }
+  } //
   
   Future<void> _initializeApp(BuildContext context) async {
     // Simulasi loading cepat
