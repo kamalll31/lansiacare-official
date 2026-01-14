@@ -4,60 +4,74 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:admin_web/src/core/services/api_service.dart';
 
 class AuthService extends ChangeNotifier {
-  // [FIX] Kita hapus Dio internal. Kita pakai ApiService singleton.
   final ApiService _apiService = ApiService();
   
   String? _token;
   bool _isAuthenticated = false;
-  String? _userIdentifier; // Bisa Phone atau Email
+  bool _isInitialized = false; // [BARU] Penanda proses init selesai
+  String? _userIdentifier;
   Map<String, dynamic>? _currentUser;
 
   AuthService() {
     _initialize();
   }
 
+  // Getters
+  bool get isAuthenticated => _isAuthenticated;
+  bool get isInitialized => _isInitialized; // Getter baru
+  String? get userIdentifier => _userIdentifier;
+  String? get token => _token;
+  Map<String, dynamic>? get currentUser => _currentUser;
+
   /// Inisialisasi: Memuat sesi login yang tersimpan (Auto-Login)
   Future<void> _initialize() async {
-    final prefs = await SharedPreferences.getInstance();
+    if (kDebugMode) print("🔐 AuthService: Memulai inisialisasi...");
     
-    _token = prefs.getString('auth_token');
-    _userIdentifier = prefs.getString('user_identifier'); // Generalisasi nama variabel
-    final userJson = prefs.getString('current_user');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      _token = prefs.getString('auth_token');
+      _userIdentifier = prefs.getString('user_identifier');
+      final userJson = prefs.getString('current_user');
 
-    if (_token != null && _token!.isNotEmpty) {
-      _isAuthenticated = true;
+      if (_token != null && _token!.isNotEmpty) {
+        _isAuthenticated = true;
+        if (kDebugMode) print("✅ AuthService: Token ditemukan. User Authenticated.");
 
-      // Restore data user jika ada
-      if (userJson != null) {
-        try {
-          _currentUser = json.decode(userJson);
-        } catch (e) {
-          debugPrint('Error parsing user json: $e');
-          await logout(); 
+        if (userJson != null) {
+          try {
+            _currentUser = json.decode(userJson);
+          } catch (e) {
+            debugPrint('⚠️ Error parsing user json: $e');
+            // Jangan logout otomatis dulu, biarkan token bekerja
+          }
         }
+      } else {
+        if (kDebugMode) print("ℹ️ AuthService: Tidak ada token tersimpan.");
       }
+    } catch (e) {
+      debugPrint("❌ AuthService Init Error: $e");
+    } finally {
+      // Apapun yang terjadi, tandai init selesai agar Router bisa jalan
+      _isInitialized = true;
+      notifyListeners();
     }
-    
-    notifyListeners();
   }
 
   /// Fungsi Login Utama
-  /// [FIX] Mengubah parameter 'email' menjadi 'phone' agar sesuai dengan Backend Admin
   Future<bool> login(String phone, String password) async {
+    if (kDebugMode) print("🚀 Attempting Login: $phone");
     final prefs = await SharedPreferences.getInstance();
 
     try {
       final cleanPhone = phone.trim();
       final cleanPassword = password.trim(); 
 
-      // [FIX] Gunakan ApiService.post, bukan _dio.post
-      // Backend mengharapkan 'phone', bukan 'email' sesuai seed data admin
       final response = await _apiService.post('/api/v1/auth/login', data: {
         'phone': cleanPhone, 
         'password': cleanPassword,
       });
 
-      // ApiService akan melempar error jika status != 2xx, jadi jika sampai sini berarti sukses
       final data = response.data;
       
       // 1. Ambil Token
@@ -74,33 +88,31 @@ class AuthService extends ChangeNotifier {
       _userIdentifier = cleanPhone;
       _isAuthenticated = true;
 
-      // 4. Simpan ke Penyimpanan Lokal (PENTING untuk ApiService Interceptor)
+      // 4. Simpan ke Penyimpanan Lokal
       if (_token != null) await prefs.setString('auth_token', _token!);
       if (_userIdentifier != null) await prefs.setString('user_identifier', _userIdentifier!);
       if (_currentUser != null) await prefs.setString('current_user', json.encode(_currentUser));
 
+      if (kDebugMode) print("✅ Login Berhasil!");
       notifyListeners();
       return true;
 
     } catch (e) {
-      if (kDebugMode) {
-        print('🔥 Login Service Error: $e');
-      }
+      if (kDebugMode) print('🔥 Login Gagal: $e');
       return false;
     }
   }
 
   /// Fungsi Logout
   Future<void> logout() async {
+    if (kDebugMode) print("🚪 Logging out...");
     final prefs = await SharedPreferences.getInstance();
     
-    // Hapus data dari disk
     await prefs.remove('auth_token');
     await prefs.remove('user_identifier');
     await prefs.remove('current_user');
-    await prefs.clear(); // Opsional: Hapus semua jika perlu
+    await prefs.clear();
 
-    // Reset variabel di memori
     _token = null;
     _userIdentifier = null;
     _currentUser = null;
@@ -109,13 +121,6 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Getters
-  bool get isAuthenticated => _isAuthenticated;
-  String? get userIdentifier => _userIdentifier;
-  String? get token => _token;
-  Map<String, dynamic>? get currentUser => _currentUser;
-
-  // Helper untuk update data user tanpa login ulang
   void updateCurrentUser(Map<String, dynamic> userData) {
     _currentUser = userData;
     SharedPreferences.getInstance().then((prefs) {

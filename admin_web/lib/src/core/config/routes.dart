@@ -11,7 +11,6 @@ import 'package:admin_web/src/features/auth/presentation/splash_screen.dart';
 import 'package:admin_web/src/features/dashboard/presentation/dashboard_screen.dart';
 
 // --- USERS ---
-// [FIX VERCEL] Ubah import ke 'user_list_screen.dart' (sesuai file asli Anda)
 import 'package:admin_web/src/features/users/presentation/user_list_screen.dart'; 
 import 'package:admin_web/src/features/users/presentation/user_detail_screen.dart';
 
@@ -19,24 +18,34 @@ final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>(de
 
 final router = GoRouter(
   navigatorKey: _rootNavigatorKey,
-  initialLocation: '/', 
+  
+  // [FIX 1] Ubah start awal langsung ke Login. 
+  // (Splash screen visual sudah ditangani oleh main.dart)
+  initialLocation: '/login', 
+
   redirect: (context, state) {
     final authService = Provider.of<AuthService>(context, listen: false);
     final isLoggedIn = authService.isAuthenticated;
     
-    final isLoggingIn = state.uri.toString() == '/login';
-    final isSplash = state.uri.toString() == '/';
+    final currentPath = state.uri.toString();
+    final isLoggingIn = currentPath == '/login';
+    final isSplash = currentPath == '/';
 
-    if (!isLoggedIn && !isLoggingIn && !isSplash) {
+    // [FIX 2 - LOGIC ANTI MACET]
+    // Jika BELUM Login dan TIDAK sedang di halaman login -> LEMPAR KE LOGIN
+    // (Kita hapus pengecekan '!isSplash' agar tidak nyangkut)
+    if (!isLoggedIn && !isLoggingIn) {
       return '/login';
     }
 
+    // Jika SUDAH Login tapi masih di halaman Login atau Splash -> LEMPAR KE DASHBOARD
     if (isLoggedIn && (isLoggingIn || isSplash)) {
       return '/dashboard';
     }
 
-    return null;
+    return null; // Lanjut ke halaman yang dituju
   },
+  
   routes: [
     GoRoute(
       path: '/',
@@ -57,14 +66,12 @@ final router = GoRouter(
     GoRoute(
       path: '/users',
       name: 'users',
-      // [FIX VERCEL] Gunakan UserListScreen (sesuai nama file)
       builder: (context, state) => const UserListScreen(), 
       routes: [
         GoRoute(
           path: ':userId',
           name: 'user_detail',
           builder: (context, state) {
-            // [FIX] Ambil ID sebagai String
             final userId = state.pathParameters['userId']!;
             return UserDetailScreen(userId: userId);
           },
@@ -72,7 +79,7 @@ final router = GoRouter(
       ],
     ),
 
-    // --- PLACEHOLDERS (Agar Build Tidak Error) ---
+    // --- PLACEHOLDERS ---
     GoRoute(
       path: '/content',
       builder: (context, state) => const _PlaceholderScreen(title: "Manajemen Konten"),
