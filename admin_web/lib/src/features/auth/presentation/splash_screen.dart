@@ -21,7 +21,7 @@ class SplashScreen extends StatelessWidget {
               'Lansia Care Admin',
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 color: Colors.white,
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.bold,//
               ),
             ),
           ],
