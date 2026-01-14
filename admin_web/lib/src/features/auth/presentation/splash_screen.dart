@@ -6,28 +6,24 @@ class SplashScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // [TESTING] Ubah jadi MERAH supaya kelihatan kalau kode baru masuk
-      backgroundColor: Colors.red, 
+      // Kembalikan ke warna tema aplikasi (Biasanya Biru/Primary)
+      backgroundColor: Theme.of(context).colorScheme.primary,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const CircularProgressIndicator(
-              color: Colors.white,
+            // Logo / Loading Putih
+            CircularProgressIndicator(
+              color: Theme.of(context).colorScheme.onPrimary,
             ),
             const SizedBox(height: 20),
             Text(
-              'VERSI BARU: SUKSES LOAD', // Teks penanda
+              'Lansia Care Admin',
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 10),
-            const Text(
-              'Menunggu navigasi...',
-              style: TextStyle(color: Colors.white),
-            )
           ],
         ),
       ),
