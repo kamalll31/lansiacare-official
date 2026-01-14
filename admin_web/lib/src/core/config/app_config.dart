@@ -1,33 +1,28 @@
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+// FILE: admin_web/lib/src/core/config/app_config.dart
 
 class AppConfig {
-  // Mencegah instansiasi class ini (Private Constructor)
+  // Private Constructor
   AppConfig._();
 
   // =========================================================
-  // 1. DYNAMIC CONFIGURATION
+  // 1. URL BACKEND (HARDCODED)
   // =========================================================
 
-  /// URL Backend Flask
+  // Kita matikan dotenv sementara supaya Vercel tidak crash mencari file .env yang hilang.
   static String get apiBaseUrl {
-    // [FIX] HAPUS '/api/v1' DARI SINI
-    // Cukup domain saja: 'https://kamalll31.pythonanywhere.com'
-    // Karena ApiService akan menggabungkannya menjadi: domain + /api/v1 + /endpoint
-    return dotenv.env['API_BASE_URL'] ?? 'https://lansiacare-backend.vercel.app';
-  }
-
-  /// URL Project Supabase
-  static String get supabaseUrl {
-    return dotenv.env['SUPABASE_URL'] ?? '';
-  }
-
-  /// Kunci Anonim Supabase (Public Key)
-  static String get supabaseAnonKey {
-    return dotenv.env['SUPABASE_ANON_KEY'] ?? '';
+    return 'https://lansiacare-backend.vercel.app';
   }
 
   // =========================================================
-  // 2. STATIC CONFIGURATION
+  // 2. SUPABASE CONFIG (Opsional)
+  // =========================================================
+  
+  // Biarkan string kosong dulu jika belum urgent dipakai
+  static String get supabaseUrl => '';
+  static String get supabaseAnonKey => '';
+
+  // =========================================================
+  // 3. STATIC CONFIGURATION
   // =========================================================
 
   static const String appName = 'Lansia Care Admin';
