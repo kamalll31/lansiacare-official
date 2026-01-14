@@ -1,5 +1,5 @@
 import os
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS 
@@ -7,6 +7,7 @@ from flask_migrate import Migrate
 from dotenv import load_dotenv
 from sqlalchemy import text 
 
+# Load environment variables dari file .env
 load_dotenv()
 
 # Inisialisasi Ekstensi Global
@@ -18,30 +19,29 @@ def create_app():
     app = Flask(__name__)
     
     # ==================================================================
-    # 1. KONFIGURASI UTAMA
+    # 1. KONFIGURASI UTAMA (DATABASE & SECURITY)
     # ==================================================================
     basedir = os.path.abspath(os.path.dirname(__file__))
     
-    # Mengambil DATABASE_URL dari Vercel/Supabase
-    # Fallback ke SQLite lokal jika env tidak ada
+    # Menangani DATABASE_URL (Support Supabase/PostgreSQL & SQLite)
     database_url = os.environ.get('DATABASE_URL')
     if not database_url:
         database_url = 'sqlite:///' + os.path.join(basedir, '../instance/dev.db')
     
-    # Fix untuk postgresql:// (SQLAlchemy butuh postgresql:// bukan postgres://)
+    # Fix untuk dialek postgresql (SQLAlchemy mewajibkan postgresql://)
     if database_url and database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql://", 1)
 
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
-    # Security Config
+    # Konfigurasi JWT & Upload
     app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'dev-secret-change-me')
     app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 86400  # 24 jam
     app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # Max 100MB
     
     # ==================================================================
-    # 2. INISIALISASI EKSTENSI
+    # 2. INISIALISASI EKSTENSI KE APP
     # ==================================================================
     db.init_app(app)
     jwt.init_app(app)
@@ -57,11 +57,8 @@ def create_app():
     # ==================================================================
     # 3. KONFIGURASI CORS (WEB FRIENDLY)
     # ==================================================================
-    # Mengizinkan semua origin (*) agar Flutter Web (localhost:port_acak) bisa akses
     CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
-    # Tambahan: Memaksa header CORS di setiap response
-    # Ini solusi ampuh untuk error 'ClientException: Failed to fetch'
     @app.after_request
     def after_request(response):
         response.headers.add('Access-Control-Allow-Origin', '*')
@@ -70,17 +67,18 @@ def create_app():
         return response
 
     # ==================================================================
-    # [FITUR DARURAT] SETUP DATABASE & RESET TOTAL
+    # 4. [FITUR DARURAT SECURE] SETUP DATABASE & RESET TOTAL
     # ==================================================================
     @app.route('/setup-db-darurat')
     def setup_database_and_admin():
+        # [PERBAIKAN KEAMANAN] Tambahkan pengecekan key sederhana agar tidak bisa diakses orang asing
+        # Akses: /setup-db-darurat?key=lansiacare2026
+        if request.args.get('key') != "lansiacare2026":
+            return jsonify({"status": "error", "message": "Unauthorized"}), 403
+
         try:
-            # [RESET DATABASE]
-            # Hapus tanda komentar pada db.drop_all() untuk mereset database
-            # PENTING: Ini akan menghapus semua data lama!
-            db.drop_all()  # <--- UNCOMMENTED FOR RESET
-            
-            # Buat tabel baru dengan struktur yang benar
+            # RESET DATABASE
+            db.drop_all() 
             db.create_all()
             status_msg = ["♻️ Database tables reset and recreated."]
 
@@ -89,7 +87,7 @@ def create_app():
             
             admin_phone = "08123456789"
             
-            # Cek apakah admin sudah ada
+            # Buat Admin Baru
             existing_admin = User.query.filter_by(phone=admin_phone).first()
             if not existing_admin:
                 new_admin = User(
@@ -124,7 +122,7 @@ def create_app():
             return jsonify({"status": "error", "message": f"Error: {str(e)}"}), 500
 
     # ==================================================================
-    # 4. REGISTER BLUEPRINTS (ROUTES)
+    # 5. REGISTER BLUEPRINTS (ROUTES) - SESUAI FILE ASLI ANDA
     # ==================================================================
     
     # 1. Auth Routes
@@ -132,51 +130,52 @@ def create_app():
         from app.api.v1.auth import auth_bp
         app.register_blueprint(auth_bp, url_prefix='/api/v1/auth')
     except ImportError as e:
-         print(f"⚠️ Warning: Auth Blueprint Import Error: {e}")
+        print(f"⚠️ Auth Blueprint Error: {e}")
 
     # 2. Users Routes
     try:
         from app.api.v1.users import users_bp 
         app.register_blueprint(users_bp, url_prefix='/api/v1/users')
     except ImportError as e:
-         print(f"⚠️ Warning: Users Blueprint Import Error: {e}")
+        print(f"⚠️ Users Blueprint Error: {e}")
     
     # 3. Activities Routes
     try:
         from app.api.v1.activities import activities_bp
         app.register_blueprint(activities_bp, url_prefix='/api/v1/activities')
     except ImportError as e:
-         print(f"⚠️ Warning: Activities Blueprint Import Error: {e}")
+        print(f"⚠️ Activities Blueprint Error: {e}")
 
     # 4. Admin Routes
     try:
         from app.api.v1.admin import admin_bp
         app.register_blueprint(admin_bp, url_prefix='/api/v1/admin')
     except ImportError as e:
-         print(f"⚠️ Warning: Admin Blueprint Import Error: {e}")
+        print(f"⚠️ Admin Blueprint Error: {e}")
 
     # 5. Content Routes
     try:
         from app.api.v1.content import content_bp
         app.register_blueprint(content_bp, url_prefix='/api/v1/content')
     except ImportError as e:
-         print(f"⚠️ Warning: Content Blueprint Import Error: {e}")
+        print(f"⚠️ Content Blueprint Error: {e}")
     
     # 6. Family Routes
     try:
         from app.api.v1.family import family_bp
         app.register_blueprint(family_bp, url_prefix='/api/v1/family')
     except ImportError as e:
-         print(f"⚠️ Warning: Family Blueprint Import Error: {e}")
+        print(f"⚠️ Family Blueprint Error: {e}")
 
     # 7. Emergency Routes
     try:
         from app.api.v1.emergency import emergency_bp
         app.register_blueprint(emergency_bp, url_prefix='/api/v1/emergency')
-    except ImportError: pass
+    except ImportError as e:
+        print(f"⚠️ Emergency Blueprint Error: {e}")
 
     # ==================================================================
-    # 5. ROUTES DASAR
+    # 6. ERROR HANDLERS & BASIC ROUTES
     # ==================================================================
     @app.errorhandler(404)
     def not_found(e):
@@ -196,6 +195,6 @@ def create_app():
             db.session.execute(text('SELECT 1'))
             return jsonify({'status': 'healthy', 'database': 'connected'})
         except Exception as e:
-            return jsonify({'status': 'healthy', 'database': f'error: {str(e)}'})
+            return jsonify({'status': 'unhealthy', 'database': f'error: {str(e)}'}), 500
     
     return app

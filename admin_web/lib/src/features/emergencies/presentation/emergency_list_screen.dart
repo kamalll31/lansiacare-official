@@ -4,66 +4,92 @@ import 'package:admin_web/src/features/emergencies/view_models/emergency_view_mo
 import 'package:admin_web/src/shared/widgets/app_drawer.dart';
 import 'package:admin_web/src/shared/widgets/custom_app_bar.dart';
 
-class EmergencyListScreen extends StatelessWidget {
+class EmergencyListScreen extends StatefulWidget {
   const EmergencyListScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    // Bungkus dengan ChangeNotifierProvider agar Logic Timer jalan saat halaman dibuka
-    return ChangeNotifierProvider(
-      create: (_) => EmergencyViewModel(),
-      child: const _EmergencyListContent(),
-    );
-  }
+  State<EmergencyListScreen> createState() => _EmergencyListScreenState();
 }
 
-class _EmergencyListContent extends StatelessWidget {
-  const _EmergencyListContent();
+class _EmergencyListScreenState extends State<EmergencyListScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // [FIX] Memanggil data secara otomatis saat halaman dibuka
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<EmergencyViewModel>().fetchEmergencies();
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final viewModel = context.watch<EmergencyViewModel>();
-
-    return Scaffold(
-      appBar: CustomAppBar(
-        title: 'Monitor Darurat (SOS)',
-        actions: [
-          // Indikator Live
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            margin: const EdgeInsets.only(right: 16),
-            decoration: BoxDecoration(
-              color: Colors.red[50],
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.red),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.circle, size: 10, color: Colors.red),
-                SizedBox(width: 8),
-                Text('LIVE MONITORING', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 12)),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => viewModel.fetchEmergencies(),
-          ),
-        ],
-      ),
-      drawer: const AppDrawer(),
-      body: viewModel.isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : viewModel.emergencies.isEmpty
-              ? _buildEmptyState()
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: viewModel.emergencies.length,
-                  itemBuilder: (context, index) {
-                    final item = viewModel.emergencies[index];
-                    return _buildEmergencyCard(context, item);
-                  },
+    // [FIX] Kita gunakan Provider global yang sudah ada di main.dart
+    // Jangan membuat ChangeNotifierProvider baru di sini agar state konsisten
+    return Consumer<EmergencyViewModel>(
+      builder: (context, viewModel, child) {
+        return Scaffold(
+          appBar: CustomAppBar(
+            title: 'Monitor Darurat (SOS)',
+            actions: [
+              // Indikator Live
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                margin: const EdgeInsets.only(right: 16),
+                decoration: BoxDecoration(
+                  color: Colors.red[50],
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.red),
                 ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.circle, size: 10, color: Colors.red),
+                    const SizedBox(width: 8),
+                    Text(
+                      'LIVE MONITORING',
+                      style: TextStyle(
+                        color: Colors.red[700],
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                tooltip: 'Refresh Data',
+                onPressed: () => viewModel.fetchEmergencies(),
+              ),
+            ],
+          ),
+          drawer: const AppDrawer(),
+          body: _buildBody(viewModel),
+        );
+      },
+    );
+  }
+
+  Widget _buildBody(EmergencyViewModel viewModel) {
+    if (viewModel.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (viewModel.emergencies.isEmpty) {
+      return _buildEmptyState();
+    }
+
+    return RefreshIndicator(
+      onRefresh: () => viewModel.fetchEmergencies(),
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: viewModel.emergencies.length,
+        itemBuilder: (context, index) {
+          final item = viewModel.emergencies[index];
+          return _buildEmergencyCard(context, item);
+        },
+      ),
     );
   }
 
@@ -80,7 +106,7 @@ class _EmergencyListContent extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Tidak ada sinyal SOS dalam 7 hari terakhir',
+            'Tidak ada sinyal SOS aktif saat ini',
             style: TextStyle(color: Colors.grey),
           ),
         ],
@@ -94,14 +120,13 @@ class _EmergencyListContent extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: Colors.redAccent, width: 1), // Border merah
+        side: BorderSide(color: Colors.red.withOpacity(0.5), width: 1),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Icon SOS Besar
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -111,8 +136,6 @@ class _EmergencyListContent extends StatelessWidget {
               child: const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 32),
             ),
             const SizedBox(width: 16),
-            
-            // Detail Info
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -121,7 +144,7 @@ class _EmergencyListContent extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        item['user_name'] ?? 'Unknown User',
+                        item['user_name'] ?? 'Pengguna Anonim',
                         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                       Container(
@@ -130,7 +153,10 @@ class _EmergencyListContent extends StatelessWidget {
                           color: Colors.red,
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: const Text('DARURAT', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                        child: const Text(
+                          'DARURAT',
+                          style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                        ),
                       ),
                     ],
                   ),
@@ -145,7 +171,7 @@ class _EmergencyListContent extends StatelessWidget {
                       const Icon(Icons.access_time, size: 14, color: Colors.grey),
                       const SizedBox(width: 4),
                       Text(
-                        item['time_ago'] ?? '-',
+                        item['time_ago'] ?? 'Baru saja',
                         style: const TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                       const SizedBox(width: 16),
@@ -160,16 +186,13 @@ class _EmergencyListContent extends StatelessWidget {
                 ],
               ),
             ),
-
-            // Action Button
             const SizedBox(width: 16),
             Column(
               children: [
                 ElevatedButton.icon(
                   onPressed: () {
-                    // Fitur Hubungi (Bisa integrasi WA Web nanti)
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Membuka kontak darurat user...')),
+                      const SnackBar(content: Text('Menghubungi kontak darurat...')),
                     );
                   },
                   icon: const Icon(Icons.phone),
@@ -182,7 +205,6 @@ class _EmergencyListContent extends StatelessWidget {
                 const SizedBox(height: 8),
                 OutlinedButton(
                   onPressed: () {
-                    // Tandai Selesai (Hapus dari list view model)
                     context.read<EmergencyViewModel>().markAsResolved(item['id']);
                   },
                   child: const Text('Selesai'),

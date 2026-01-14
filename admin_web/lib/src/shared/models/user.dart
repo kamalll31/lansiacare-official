@@ -8,6 +8,7 @@ class User {
   final bool isVerified;
   final bool isActive;
   final DateTime createdAt;
+  final DateTime? lastLogin;
   final UserProfile? profile;
   final LansiaProfile? lansiaProfile;
   final Map<String, dynamic>? stats;
@@ -21,6 +22,7 @@ class User {
     this.isVerified = false,
     this.isActive = true,
     required this.createdAt,
+    this.lastLogin,
     this.profile,
     this.lansiaProfile,
     this.stats,
@@ -33,11 +35,14 @@ class User {
       phone: json['phone'] ?? '',
       email: json['email'],
       role: json['role'] ?? 'user',
-      isVerified: json['is_verified'] == 1 || json['is_verified'] == true,
-      isActive: json['status'] == 'active' || json['is_active'] == true || json['is_active'] == 1,
+      isVerified: json['is_verified'] == true || json['is_verified'] == 1,
+      isActive: json['is_active'] == true || json['is_active'] == 1,
       createdAt: json['created_at'] != null 
-          ? DateTime.tryParse(json['created_at']) ?? DateTime.now()
+          ? DateTime.tryParse(json['created_at'])?.toLocal() ?? DateTime.now()
           : DateTime.now(),
+      lastLogin: json['last_login'] != null 
+          ? DateTime.tryParse(json['last_login'])?.toLocal() 
+          : null,
       profile: json['profile'] != null 
           ? UserProfile.fromJson(json['profile']) 
           : null,
@@ -54,7 +59,7 @@ class User {
   }
 
   // --- HELPERS UNTUK UI ---
-  // Nama default jika profile kosong
+  
   String get displayName {
     if (profile?.fullName != null && profile!.fullName!.isNotEmpty) {
       return profile!.fullName!;
@@ -63,7 +68,7 @@ class User {
   }
 
   String get roleDisplay {
-    switch (role) {
+    switch (role.toLowerCase()) {
       case 'lansia': return 'Lansia';
       case 'keluarga': return 'Keluarga';
       case 'admin': return 'Admin';
@@ -72,13 +77,18 @@ class User {
   }
 
   Color get roleColor {
-    switch (role) {
-      case 'lansia': return Colors.orange;
-      case 'keluarga': return Colors.blue;
+    switch (role.toLowerCase()) {
+      case 'lansia': return Colors.teal;
+      case 'keluarga': return Colors.orange;
       case 'admin': return Colors.purple;
       default: return Colors.grey;
     }
   }
+
+  // Helper untuk akses statistik lebih mudah
+  int get activitiesCount => stats?['activities_count'] ?? 0;
+  int get emergencyContactsCount => stats?['emergency_contacts_count'] ?? 0;
+  int get contentCount => stats?['content_count'] ?? 0;
 }
 
 class UserProfile {
@@ -95,29 +105,20 @@ class UserProfile {
       birthDate: json['birth_date'] != null ? DateTime.tryParse(json['birth_date']) : null,
     );
   }
-
-  int? get age {
-    if (birthDate == null) return null;
-    final now = DateTime.now();
-    int age = now.year - birthDate!.year;
-    if (now.month < birthDate!.month || 
-        (now.month == birthDate!.month && now.day < birthDate!.day)) {
-      age--;
-    }
-    return age;
-  }
 }
 
 class LansiaProfile {
   final String? bloodType;
-  final String? medicalConditions;
+  final String? medicalHistory; // [FIXED] Sesuai Backend
+  final String? emergencyNotes; // [FIXED] Sesuai Backend
 
-  LansiaProfile({this.bloodType, this.medicalConditions});
+  LansiaProfile({this.bloodType, this.medicalHistory, this.emergencyNotes});
 
   factory LansiaProfile.fromJson(Map<String, dynamic> json) {
     return LansiaProfile(
       bloodType: json['blood_type'],
-      medicalConditions: json['medical_conditions'],
+      medicalHistory: json['medical_history'],
+      emergencyNotes: json['emergency_notes'],
     );
   }
 }
@@ -143,7 +144,7 @@ class FamilyConnection {
       familyMemberName: json['family_member_name'],
       lansiaName: json['lansia_name'],
       relationship: json['relationship'] ?? '',
-      isVerified: json['is_verified'] == 1 || json['is_verified'] == true,
+      isVerified: json['is_verified'] == true || json['is_verified'] == 1,
     );
   }
 }

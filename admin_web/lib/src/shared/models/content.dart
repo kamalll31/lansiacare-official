@@ -21,7 +21,7 @@ enum ContentType {
   static ContentType fromString(String value) {
     return ContentType.values.firstWhere(
       (e) => e.value == value,
-      orElse: () => ContentType.article, // Fallback aman
+      orElse: () => ContentType.article,
     );
   }
 
@@ -32,15 +32,15 @@ enum ContentType {
 }
 
 enum ContentCategory {
-  kesehatanPraktis('kesehatan_praktis', 'Tips Kesehatan Praktis', Icons.healing, Colors.green),
+  kesehatanPraktis('kesehatan_praktis', 'Tips Kesehatan', Icons.healing, Colors.green),
   senamLansia('senam_lansia', 'Senam Lansia', Icons.fitness_center, Colors.orange),
-  obatDanPengobatan('obat_dan_pengobatan', 'Obat & Pengobatan', Icons.medication, Colors.red),
+  obatDanPengobatan('obat_dan_pengobatan', 'Obat & Terapi', Icons.medication, Colors.red),
   bansosInfo('bansos_info', 'Info Bansos', Icons.attach_money, Colors.blue),
-  komunitasCerita('komunitas_cerita', 'Cerita Komunitas', Icons.people, Colors.purple),
+  komunitasCerita('komunitas_cerita', 'Komunitas', Icons.people, Colors.purple),
   keluargaTips('keluarga_tips', 'Tips Keluarga', Icons.family_restroom, Colors.teal),
-  beritaRingan('berita_ringan', 'Berita Ringan', Icons.newspaper, Colors.brown),
-  tutorialAplikasi('tutorial_aplikasi', 'Tutorial Aplikasi', Icons.phone_android, Colors.indigo),
-  umum('umum', 'Umum', Icons.category, Colors.grey); // Kategori Default
+  beritaRingan('berita_ringan', 'Berita', Icons.newspaper, Colors.brown),
+  tutorialAplikasi('tutorial_aplikasi', 'Tutorial HP', Icons.phone_android, Colors.indigo),
+  umum('umum', 'Umum', Icons.category, Colors.grey);
 
   final String value;
   final String displayName;
@@ -63,7 +63,7 @@ enum ContentCategory {
 class ContentItem {
   final int id;
   final String title;
-  final String excerpt; // Mapping ke kolom 'body' (summary) di DB
+  final String excerpt; 
   final ContentType contentType;
   
   // Embedded fields
@@ -76,7 +76,7 @@ class ContentItem {
   // Uploaded fields
   final String? mediaUrl;
   final String? thumbnailUrl;
-  final String? contentText; // Mapping ke kolom 'content_text' di DB
+  final String? contentText; 
   
   // Common fields
   final int? duration;
@@ -141,62 +141,45 @@ class ContentItem {
 
   factory ContentItem.fromJson(Map<String, dynamic> json) {
     return ContentItem(
-      id: json['id'],
-      title: json['title'] ?? 'No Title',
-      // [FIX] Backend kirim summary di 'body' atau 'excerpt'
-      excerpt: json['body'] ?? json['excerpt'] ?? '',
-      contentType: ContentType.fromString(json['content_type'] ?? 'article'),
-      
+      id: json['id'] ?? 0,
+      title: json['title'] ?? '',
+      excerpt: json['excerpt'] ?? json['body'] ?? '',
+      contentType: ContentType.fromString(json['content_type'] ?? ''),
       embedUrl: json['embed_url'],
       embedProvider: json['embed_provider'],
       embedId: json['embed_id'],
       embedType: json['embed_type'],
       embedCode: json['embed_code'],
-      
-      // [FIX] Support legacy field 'video_url'
       mediaUrl: json['media_url'] ?? json['video_url'],
       thumbnailUrl: json['thumbnail_url'],
-      
-      // [FIX] Prioritaskan 'content_text', fallback ke 'body'
-      contentText: json['content_text'] ?? json['body'] ?? '',
-      
+      contentText: json['content_text'] ?? json['body'],
       duration: json['duration'],
-      category: ContentCategory.fromString(json['category'] ?? 'umum'),
-      
+      category: ContentCategory.fromString(json['category'] ?? ''),
       authorId: json['author_id'] ?? 0,
-      authorName: json['author_name'] ?? 'Admin', // Default value
-      
-      isPublished: json['is_published'] ?? true,
+      authorName: json['author_name'] ?? 'Admin',
+      isPublished: json['is_published'] ?? false,
       isFeatured: json['is_featured'] ?? false,
       isPinned: json['is_pinned'] ?? false,
-      
       isAudioOnly: json['is_audio_only'] ?? false,
       hasSubtitles: json['has_subtitles'] ?? false,
       hasTranscript: json['has_transcript'] ?? false,
       hasAudioDescription: json['has_audio_description'] ?? false,
       accessibilityScore: json['accessibility_score'] ?? 0,
-      
       viewCount: json['view_count'] ?? 0,
       likeCount: json['like_count'] ?? 0,
       shareCount: json['share_count'] ?? 0,
       completionRate: (json['completion_rate'] ?? 0).toDouble(),
-      
-      // [FIX] Parse tanggal dengan aman
-      publishedAt: json['published_at'] != null 
-          ? DateTime.tryParse(json['published_at']) 
-          : null,
-      createdAt: DateTime.tryParse(json['created_at']) ?? DateTime.now(),
-      updatedAt: DateTime.tryParse(json['updated_at']) ?? DateTime.now(),
+      publishedAt: json['published_at'] != null ? DateTime.tryParse(json['published_at']) : null,
+      createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
+      updatedAt: DateTime.tryParse(json['updated_at'] ?? '') ?? DateTime.now(),
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
+      'id': id,
       'title': title,
-      // [FIX] Kirim 'body' karena controller backend membacanya sebagai summary
-      'body': excerpt.isNotEmpty ? excerpt : contentText,
-      'content_text': contentText,
-      
+      'excerpt': excerpt,
       'content_type': contentType.value,
       'embed_url': embedUrl,
       'embed_provider': embedProvider,
@@ -204,15 +187,11 @@ class ContentItem {
       'embed_type': embedType,
       'embed_code': embedCode,
       'media_url': mediaUrl,
-      'video_url': mediaUrl, // Kirim keduanya agar aman
       'thumbnail_url': thumbnailUrl,
+      'content_text': contentText,
       'duration': duration,
       'category': category.value,
-      
-      // [FIX] Mapping status untuk backend (published/draft)
-      'status': isPublished ? 'published' : 'draft',
       'is_published': isPublished,
-      
       'is_featured': isFeatured,
       'is_pinned': isPinned,
       'is_audio_only': isAudioOnly,
@@ -220,6 +199,50 @@ class ContentItem {
       'has_transcript': hasTranscript,
       'has_audio_description': hasAudioDescription,
     };
+  }
+
+  // [BARU] copyWith untuk memudahkan update state di ViewModel
+  ContentItem copyWith({
+    String? title,
+    String? excerpt,
+    ContentType? contentType,
+    bool? isPublished,
+    bool? isFeatured,
+    ContentCategory? category,
+  }) {
+    return ContentItem(
+      id: id,
+      title: title ?? this.title,
+      excerpt: excerpt ?? this.excerpt,
+      contentType: contentType ?? this.contentType,
+      category: category ?? this.category,
+      isPublished: isPublished ?? this.isPublished,
+      isFeatured: isFeatured ?? this.isFeatured,
+      isPinned: isPinned,
+      authorId: authorId,
+      authorName: authorName,
+      isAudioOnly: isAudioOnly,
+      hasSubtitles: hasSubtitles,
+      hasTranscript: hasTranscript,
+      hasAudioDescription: hasAudioDescription,
+      accessibilityScore: accessibilityScore,
+      viewCount: viewCount,
+      likeCount: likeCount,
+      shareCount: shareCount,
+      completionRate: completionRate,
+      createdAt: createdAt,
+      updatedAt: DateTime.now(),
+      embedUrl: embedUrl,
+      embedProvider: embedProvider,
+      embedId: embedId,
+      embedType: embedType,
+      embedCode: embedCode,
+      mediaUrl: mediaUrl,
+      thumbnailUrl: thumbnailUrl,
+      contentText: contentText,
+      duration: duration,
+      publishedAt: publishedAt,
+    );
   }
 
   String get durationFormatted {
@@ -232,63 +255,12 @@ class ContentItem {
   String get timeAgo {
     final date = publishedAt ?? createdAt;
     final now = DateTime.now();
-    final difference = now.difference(date);
-    
-    if (difference.inDays > 365) {
-      return '${(difference.inDays / 365).floor()} tahun lalu';
-    } else if (difference.inDays > 30) {
-      return '${(difference.inDays / 30).floor()} bulan lalu';
-    } else if (difference.inDays > 0) {
-      return '${difference.inDays} hari lalu';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours} jam lalu';
-    } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes} menit lalu';
-    } else {
-      return 'Baru saja';
-    }
-  }
-
-  Color get statusColor {
-    if (isPublished) return Colors.green;
-    return Colors.grey;
-  }
-
-  String get statusText {
-    if (isPublished) return 'Published';
-    return 'Draft';
-  }
-
-  // Untuk mobile app
-  Map<String, dynamic> toMobileFormat() {
-    return {
-      'id': id,
-      'title': title,
-      'type': contentType.value,
-      'category': category.displayName,
-      'duration': duration,
-      'duration_formatted': durationFormatted,
-      'thumbnail_url': thumbnailUrl,
-      'has_subtitles': hasSubtitles,
-      'is_audio_only': isAudioOnly,
-      'accessibility_score': accessibilityScore,
-      'published_at': publishedAt?.toIso8601String(),
-      'time_ago': timeAgo,
-      
-      // Media URLs based on type
-      if (contentType.isEmbedded) ...{
-        'embed_url': embedUrl,
-        'embed_provider': embedProvider,
-        'embed_id': embedId,
-        if (embedProvider == 'youtube') ...{
-          'video_url': 'https://www.youtube.com/watch?v=$embedId',
-        }
-      } else if (contentType.isUploaded) ...{
-        'media_url': mediaUrl,
-      } else if (contentType == ContentType.article) ...{
-        'content': contentText,
-      }
-    };
+    final diff = now.difference(date);
+    if (diff.inDays > 365) return '${(diff.inDays / 365).floor()} tahun lalu';
+    if (diff.inDays > 30) return '${(diff.inDays / 30).floor()} bulan lalu';
+    if (diff.inDays > 0) return '${diff.inDays} hari lalu';
+    if (diff.inHours > 0) return '${diff.inHours} jam lalu';
+    return '${diff.inMinutes} menit lalu';
   }
 }
 
@@ -332,25 +304,14 @@ class UrlAnalysis {
     );
   }
 
-  String? get thumbnailUrl {
-    return metadata['thumbnail_url'];
-  }
-
-  String? get title {
-    return metadata['title'];
-  }
-
-  String? get description {
-    return metadata['description'];
-  }
-
-  int? get duration {
-    return metadata['duration'];
-  }
+  String? get thumbnailUrl => metadata['thumbnail_url'];
+  String? get title => metadata['title'];
+  String? get description => metadata['description'];
+  int? get duration => metadata['duration'];
 }
 
 // ==============================
-// CONTENT STATS MODEL
+// ANALYTICS MODELS
 // ==============================
 class ContentStats {
   final int total;
@@ -358,7 +319,6 @@ class ContentStats {
   final Map<String, int> byType;
   final Map<String, int> categories;
   final List<ContentView> mostViewed;
-  final List<WeeklyStat> weeklyStats;
 
   ContentStats({
     required this.total,
@@ -366,7 +326,6 @@ class ContentStats {
     required this.byType,
     required this.categories,
     required this.mostViewed,
-    required this.weeklyStats,
   });
 
   factory ContentStats.fromJson(Map<String, dynamic> json) {
@@ -378,9 +337,6 @@ class ContentStats {
       mostViewed: (json['most_viewed'] as List?)
           ?.map((item) => ContentView.fromJson(item))
           .toList() ?? [],
-      weeklyStats: (json['weekly_stats'] as List?)
-          ?.map((item) => WeeklyStat.fromJson(item))
-          .toList() ?? [],
     );
   }
 }
@@ -388,42 +344,9 @@ class ContentStats {
 class ContentView {
   final int id;
   final String title;
-  final String type;
   final int views;
-
-  ContentView({
-    required this.id,
-    required this.title,
-    required this.type,
-    required this.views,
-  });
-
+  ContentView({required this.id, required this.title, required this.views});
   factory ContentView.fromJson(Map<String, dynamic> json) {
-    return ContentView(
-      id: json['id'],
-      title: json['title'] ?? 'No Title',
-      type: json['type'] ?? 'unknown',
-      views: json['views'] ?? 0,
-    );
-  }
-}
-
-class WeeklyStat {
-  final String date;
-  final int views;
-  final String type;
-
-  WeeklyStat({
-    required this.date,
-    required this.views,
-    required this.type,
-  });
-
-  factory WeeklyStat.fromJson(Map<String, dynamic> json) {
-    return WeeklyStat(
-      date: json['date'] ?? '',
-      views: json['views'] ?? 0,
-      type: json['type'] ?? '',
-    );
+    return ContentView(id: json['id'], title: json['title'] ?? '', views: json['views'] ?? 0);
   }
 }

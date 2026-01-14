@@ -21,6 +21,7 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
   @override
   void initState() {
     super.initState();
+    // [FIX] Menggunakan addPostFrameCallback agar aman memanggil Provider di awal render
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         context.read<ContentViewModel>().fetchContent();
@@ -47,66 +48,69 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final viewModel = context.watch<ContentViewModel>();
-    
-    return Scaffold(
-      key: _scaffoldKey,
-      backgroundColor: Colors.white,
-      drawer: const AppDrawer(), // ✅ SELALU ADA DRAWER
-      appBar: AppBar( // ✅ GUNAKAN APPBAR STANDARD
-        title: const Text('Manajemen Konten'),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-        elevation: 1,
-        iconTheme: const IconThemeData(color: Colors.black87),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-            onPressed: () => viewModel.fetchContent(),
+    // Menggunakan Consumer agar UI rebuild otomatis saat state di ViewModel berubah
+    return Consumer<ContentViewModel>(
+      builder: (context, viewModel, child) {
+        return Scaffold(
+          key: _scaffoldKey,
+          backgroundColor: Colors.white,
+          drawer: const AppDrawer(), 
+          appBar: AppBar(
+            title: const Text('Manajemen Konten'),
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.black87,
+            elevation: 1,
+            iconTheme: const IconThemeData(color: Colors.black87),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                tooltip: 'Refresh',
+                onPressed: () => viewModel.fetchContent(),
+              ),
+              const SizedBox(width: 8),
+            ],
           ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.go('/content/new'),
-        icon: const Icon(Icons.add),
-        label: const Text('Buat Baru'),
-        backgroundColor: Colors.blue,
-        foregroundColor: Colors.white,
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // SEARCH BAR
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: TextField(
-                controller: _searchController,
-                onChanged: _onSearchChanged,
-                decoration: InputDecoration(
-                  hintText: 'Cari konten...',
-                  prefixIcon: const Icon(Icons.search),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  filled: true,
-                  fillColor: Colors.grey[50],
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
+          floatingActionButton: FloatingActionButton.extended(
+            onPressed: () => context.go('/content/new'),
+            icon: const Icon(Icons.add),
+            label: const Text('Buat Baru'),
+            backgroundColor: Colors.blue,
+            foregroundColor: Colors.white,
+          ),
+          body: SafeArea(
+            child: Column(
+              children: [
+                // SEARCH BAR
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: _onSearchChanged,
+                    decoration: InputDecoration(
+                      hintText: 'Cari konten...',
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[50],
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
 
-            // CONTENT AREA
-            Expanded(
-              child: _buildContent(viewModel),
+                // CONTENT AREA
+                Expanded(
+                  child: _buildContent(viewModel),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -201,6 +205,7 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
     );
   }
 
+  // [RESTORED] Desain Card asli dengan fitur lengkap
   Widget _buildContentCard(ContentItem content) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -322,7 +327,7 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
                         
                         const Spacer(),
                         
-                        // UPDATED TIME (jika ada)
+                        // UPDATED TIME
                         Text(
                           _formatDate(content.updatedAt),
                           style: const TextStyle(
@@ -338,7 +343,7 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
               
               const SizedBox(width: 12),
               
-              // ACTION MENU
+              // ACTION MENU (POPUP)
               PopupMenuButton(
                 icon: const Icon(Icons.more_vert, color: Colors.grey),
                 itemBuilder: (context) => [
@@ -395,6 +400,7 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
     );
   }
 
+  // [RESTORED] Helper untuk format tanggal
   String _formatDate(DateTime date) {
     final now = DateTime.now();
     final difference = now.difference(date);
@@ -413,6 +419,7 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
     }
   }
 
+  // [RESTORED] Dialog konfirmasi hapus
   void _showDeleteConfirmation(BuildContext context, ContentItem content) {
     showDialog(
       context: context,
@@ -440,13 +447,23 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
     );
   }
 
+  // [RESTORED] Logic hapus konten
   void _deleteContent(ContentItem content) {
-    // TODO: Implement delete logic
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Menghapus "${content.title}"...'),
-        backgroundColor: Colors.blue,
-      ),
-    );
+    // Memanggil deleteContent dari ViewModel
+    context.read<ContentViewModel>().deleteContent(content.id).then((_) {
+       ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Berhasil menghapus "${content.title}"'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }).catchError((e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal menghapus: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    });
   }
 }
