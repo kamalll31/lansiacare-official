@@ -3,31 +3,23 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:admin_web/src/core/services/auth_service.dart';
 
-// --- AUTH SCREENS ---
-// Pastikan file ini ada
+// --- AUTH ---
 import 'package:admin_web/src/features/auth/presentation/login_screen.dart';
-import 'package:admin_web/src/features/auth/presentation/splash_screen.dart'; // Tambahkan Splash jika ada
+import 'package:admin_web/src/features/auth/presentation/splash_screen.dart';
 
-// --- DASHBOARD SCREENS ---
+// --- DASHBOARD ---
 import 'package:admin_web/src/features/dashboard/presentation/dashboard_screen.dart';
 
-// --- USERS SCREENS ---
-import 'package:admin_web/src/features/users/presentation/users_screen.dart'; // Sesuaikan nama file list (users_screen.dart atau user_list_screen.dart)
+// --- USERS ---
+// [FIX VERCEL] Ubah import ke 'user_list_screen.dart' (sesuai file asli Anda)
+import 'package:admin_web/src/features/users/presentation/user_list_screen.dart'; 
 import 'package:admin_web/src/features/users/presentation/user_detail_screen.dart';
-
-// --- CONTENT SCREENS (Comment jika file belum ada) ---
-// import 'package:admin_web/src/features/content/presentation/article_list_screen.dart';
-// import 'package:admin_web/src/features/content/presentation/hybrid_content_editor.dart';
-
-// --- EMERGENCY & ANALYTICS (Comment jika file belum ada) ---
-// import 'package:admin_web/src/features/emergencies/presentation/emergency_list_screen.dart';
-// import 'package:admin_web/src/features/analytics/presentation/analytics_screen.dart';
 
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 
 final router = GoRouter(
   navigatorKey: _rootNavigatorKey,
-  initialLocation: '/', // Mulai dari root/splash
+  initialLocation: '/', 
   redirect: (context, state) {
     final authService = Provider.of<AuthService>(context, listen: false);
     final isLoggedIn = authService.isAuthenticated;
@@ -35,12 +27,10 @@ final router = GoRouter(
     final isLoggingIn = state.uri.toString() == '/login';
     final isSplash = state.uri.toString() == '/';
 
-    // 1. Jika belum login, dan bukan di halaman login/splash -> Lempar ke Login
     if (!isLoggedIn && !isLoggingIn && !isSplash) {
       return '/login';
     }
 
-    // 2. Jika sudah login, tapi masih di halaman login/splash -> Lempar ke Dashboard
     if (isLoggedIn && (isLoggingIn || isSplash)) {
       return '/dashboard';
     }
@@ -48,39 +38,33 @@ final router = GoRouter(
     return null;
   },
   routes: [
-    // --- SPLASH (Opsional, arahkan ke Login jika belum ada file Splash) ---
     GoRoute(
       path: '/',
-      builder: (context, state) => const LoginScreen(), // Ganti SplashScreen() jika sudah ada
+      builder: (context, state) => const SplashScreen(),
     ),
-
-    // --- AUTH ---
     GoRoute(
       path: '/login',
       name: 'login',
       builder: (context, state) => const LoginScreen(),
     ),
-
-    // --- DASHBOARD ---
     GoRoute(
       path: '/dashboard',
       name: 'dashboard',
       builder: (context, state) => const DashboardScreen(),
     ),
 
-    // --- USERS MANAGEMENT ---
+    // --- USERS ---
     GoRoute(
       path: '/users',
       name: 'users',
-      // Pastikan nama class di file users_screen.dart adalah UsersScreen
-      builder: (context, state) => const UsersScreen(), 
+      // [FIX VERCEL] Gunakan UserListScreen (sesuai nama file)
+      builder: (context, state) => const UserListScreen(), 
       routes: [
         GoRoute(
-          path: ':userId', // Parameter dinamis
+          path: ':userId',
           name: 'user_detail',
           builder: (context, state) {
-            // [FIX UTAMA] Ambil sebagai String langsung.
-            // UserDetailScreen versi baru menerima String userId.
+            // [FIX] Ambil ID sebagai String
             final userId = state.pathParameters['userId']!;
             return UserDetailScreen(userId: userId);
           },
@@ -88,58 +72,36 @@ final router = GoRouter(
       ],
     ),
 
-    // --- CONTENT MANAGEMENT (Placeholder Aman) ---
+    // --- PLACEHOLDERS (Agar Build Tidak Error) ---
     GoRoute(
       path: '/content',
-      name: 'content_list',
-      builder: (context, state) => const Scaffold(body: Center(child: Text("Fitur Konten (Coming Soon)"))),
-      routes: [
-        GoRoute(
-          path: 'new',
-          name: 'content_new',
-           builder: (context, state) => const Scaffold(body: Center(child: Text("Editor Konten Baru"))),
-        ),
-        GoRoute(
-          path: ':id/edit',
-          name: 'content_edit',
-          builder: (context, state) => const Scaffold(body: Center(child: Text("Edit Konten"))),
-        ),
-      ],
+      builder: (context, state) => const _PlaceholderScreen(title: "Manajemen Konten"),
     ),
-
-    // --- EMERGENCY (Placeholder Aman) ---
     GoRoute(
       path: '/emergencies',
-      name: 'emergencies',
-      builder: (context, state) => const Scaffold(body: Center(child: Text("Emergency List (Coming Soon)"))),
+      builder: (context, state) => const _PlaceholderScreen(title: "Daftar Darurat"),
     ),
-
-    // --- ANALYTICS (Placeholder Aman) ---
     GoRoute(
       path: '/analytics',
-      name: 'analytics',
-      builder: (context, state) => const Scaffold(body: Center(child: Text("Analytics (Coming Soon)"))),
+      builder: (context, state) => const _PlaceholderScreen(title: "Analitik"),
     ),
   ],
 
-  // --- ERROR HANDLER (404) ---
   errorBuilder: (context, state) => Scaffold(
-    body: Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.error_outline, size: 64, color: Colors.red),
-          const SizedBox(height: 16),
-          Text('404 - Halaman Tidak Ditemukan', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          Text('Rute: ${state.uri.toString()}'),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: () => context.go('/dashboard'),
-            child: const Text('Kembali ke Dashboard'),
-          ),
-        ],
-      ),
-    ),
+    body: Center(child: Text('Error: ${state.error}')),
   ),
 );
+
+// Widget dummy
+class _PlaceholderScreen extends StatelessWidget {
+  final String title;
+  const _PlaceholderScreen({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: Center(child: Text("$title Segera Hadir")),
+    );
+  }
+}

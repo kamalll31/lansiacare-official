@@ -3,14 +3,15 @@ import 'package:provider/provider.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:form_builder_validators/form_builder_validators.dart';
 import 'package:timeago/timeago.dart' as timeago;
-import 'package:flutter_dotenv/flutter_dotenv.dart'; // [FIX] Import dotenv
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 // Core Imports
 import 'package:admin_web/src/core/theme/app_theme.dart';
 import 'package:admin_web/src/core/services/auth_service.dart';
 import 'package:admin_web/src/core/services/api_service.dart';
-import 'package:admin_web/src/core/services/supabase_storage_service.dart'; // [FIX] Import Supabase Service
-import 'package:admin_web/src/core/config/routes.dart';
+import 'package:admin_web/src/core/services/supabase_storage_service.dart';
+// [PENTING] Import ini sekarang membawa variabel 'router'
+import 'package:admin_web/src/core/config/routes.dart'; 
 
 // ViewModels
 import 'package:admin_web/src/features/dashboard/view_models/dashboard_view_model.dart';
@@ -25,21 +26,21 @@ import 'package:admin_web/src/features/auth/presentation/splash_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // [FIX] Load Environment Variables (.env)
+  // 1. Load Environment Variables (.env)
   try {
     await dotenv.load(fileName: ".env");
   } catch (e) {
-    debugPrint("⚠️ Warning: .env file not found. Using default configs.");
+    debugPrint("⚠️ Warning: .env file not found. Using default configs/environment variables.");
   }
 
-  // [FIX] Initialize Supabase
+  // 2. Initialize Supabase
   try {
     await SupabaseStorageService.initialize();
   } catch (e) {
     debugPrint("❌ Critical: Failed to initialize Supabase. Check your .env file. Error: $e");
   }
 
-  // [FIX] Set locale timeago ke Indonesia
+  // 3. Set locale timeago ke Indonesia
   timeago.setLocaleMessages('id', timeago.IdMessages());
   
   runApp(const MyApp());
@@ -63,10 +64,16 @@ class MyApp extends StatelessWidget {
       child: MaterialApp.router(
         title: 'Lansia Care Admin',
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.lightTheme(),
-        routerConfig: AppRouter.router,
         
-        // [FIX] Localization Delegates yang Lengkap
+        // Pastikan AppTheme.lightTheme() sesuai dengan definisi di file theme Anda
+        // Jika error, coba ganti jadi AppTheme.lightTheme (tanpa kurung)
+        theme: AppTheme.lightTheme(), 
+        
+        // [FIX UTAMA DISINI]
+        // Gunakan variabel 'router' langsung, JANGAN 'AppRouter.router'
+        routerConfig: router, 
+        
+        // Localization Delegates
         localizationsDelegates: const [
           GlobalMaterialLocalizations.delegate,
           GlobalWidgetsLocalizations.delegate,
@@ -74,13 +81,14 @@ class MyApp extends StatelessWidget {
           FormBuilderLocalizations.delegate,
         ],
         
-        // [FIX] Supported Locales
+        // Supported Locales
         supportedLocales: const [
           Locale('id'), // Bahasa Indonesia
           Locale('en'), // English
         ],
         locale: const Locale('id'), // Force ke Indonesia
         
+        // Init Builder (Opsional, router biasanya menangani ini tapi logic Anda juga oke)
         builder: (context, child) {
           return FutureBuilder(
             future: _initializeApp(context),
@@ -97,7 +105,7 @@ class MyApp extends StatelessWidget {
   }
   
   Future<void> _initializeApp(BuildContext context) async {
-    // Simulasi loading jika ada inisialisasi tambahan
+    // Simulasi loading atau pre-fetch data user jika ada token tersimpan
     await Future.delayed(const Duration(milliseconds: 500));
   }
 }

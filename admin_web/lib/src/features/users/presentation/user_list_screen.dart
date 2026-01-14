@@ -35,7 +35,7 @@ class _UserListScreenState extends State<UserListScreen> {
   }
 
   void _onSearchChanged(String query) {
-    _searchDebounce?.cancel();
+    if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 500), () {
       if (mounted) {
         context.read<UserViewModel>().updateFilter(search: query);
@@ -376,6 +376,7 @@ class _UserListScreenState extends State<UserListScreen> {
         side: BorderSide(color: Colors.grey[200]!, width: 1),
       ),
       child: InkWell(
+        // [FIX] Ensure proper navigation URL construction
         onTap: () => context.go('/users/${user.id}'),
         borderRadius: BorderRadius.circular(10),
         child: Padding(
