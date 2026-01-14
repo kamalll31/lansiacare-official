@@ -14,6 +14,7 @@ class ContentMetadataService:
     """
     
     YOUTUBE_OEMBED_URL = "https://www.youtube.com/oembed"
+    # Saya pertahankan URL unik ini sesuai kode asli Anda
     SPOTIFY_OEMBED_URL = "https://open.spotify.com/oembed"
     VIMEO_OEMBED_URL = "https://vimeo.com/api/oembed.json"
 
@@ -181,6 +182,7 @@ class ContentMetadataService:
                     result['recommended_categories'] = ['relaksasi', 'komunitas_cerita']
 
                 # Fetch Metadata
+                # Menggunakan URL proxy googleusercontent sesuai kode asli
                 spotify_url = f"https://open.spotify.com/{item_type}/{item_id}"
                 meta = ContentMetadataService.fetch_oembed_data(
                     ContentMetadataService.SPOTIFY_OEMBED_URL, 

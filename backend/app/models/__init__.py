@@ -1,64 +1,13 @@
 from app import db
 from datetime import datetime
-from sqlalchemy.ext.hybrid import hybrid_property
-import re
-from werkzeug.security import generate_password_hash, check_password_hash
+
+# 1. IMPORT DARI FILE YANG SUDAH DIPISAH (Agar tidak duplikat)
+from .user import User
+from .content import ContentItem, ContentTranscript, ContentConsumption, UrlAnalysis
 
 # ==============================================================================
-# UTILITY FUNCTIONS
+# 2. MODEL PROFILE & KELUARGA (Tetap disini sesuai kode Anda)
 # ==============================================================================
-def generate_slug(title):
-    from unicodedata import normalize
-    if not title: return 'untitled'
-    slug = normalize('NFKD', title).encode('ascii', 'ignore').decode('ascii')
-    slug = re.sub(r'[^\w\s-]', '', slug).strip().lower()
-    slug = re.sub(r'[-\s]+', '-', slug)
-    return slug
-
-# ==============================================================================
-# 1. AUTH & USER MODELS
-# ==============================================================================
-class User(db.Model):
-    __tablename__ = 'users'
-    id = db.Column(db.Integer, primary_key=True)
-    phone = db.Column(db.String(20), unique=True, nullable=False, index=True)
-    email = db.Column(db.String(255), unique=True, index=True, nullable=True)
-    password_hash = db.Column(db.String(255), nullable=False)
-    role = db.Column(db.String(20), default='keluarga') 
-    is_verified = db.Column(db.Boolean, default=False)
-    is_active = db.Column(db.Boolean, default=True)
-    last_login = db.Column(db.DateTime)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    def set_password(self, password):
-        self.password_hash = generate_password_hash(password)
-    def check_password(self, password):
-        return check_password_hash(self.password_hash, password)
-
-    def to_jwt_claims(self):
-        return {
-            'phone': self.phone or "", 
-            'role': self.role or "keluarga", 
-            'is_verified': self.is_verified, 
-            'email': self.email or "" 
-        }
-    
-    @hybrid_property
-    def full_name(self):
-        if hasattr(self, 'profile') and self.profile: return self.profile.full_name
-        return "User"
-    
-    def to_dict(self):
-        return {
-            'id': self.id, 
-            'phone': self.phone or "", 
-            'email': self.email or "", 
-            'role': self.role or "keluarga", 
-            'full_name': self.full_name, 
-            'is_verified': self.is_verified
-        }
-
 class UserProfile(db.Model):
     __tablename__ = 'user_profiles'
     id = db.Column(db.Integer, primary_key=True)
@@ -80,12 +29,10 @@ class OTPSession(db.Model):
     expires_at = db.Column(db.DateTime, nullable=False, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     __table_args__ = (db.Index('idx_otp_phone_used', 'phone', 'is_used'),)
+    
     def is_expired(self):
         return datetime.utcnow() > self.expires_at
 
-# ==============================================================================
-# 2. LANSIA & FAMILY SPECIFIC MODELS
-# ==============================================================================
 class LansiaProfile(db.Model):
     __tablename__ = 'lansia_profiles'
     id = db.Column(db.Integer, primary_key=True)
@@ -107,120 +54,25 @@ class FamilyConnection(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     __table_args__ = (db.UniqueConstraint('lansia_user_id', 'family_user_id', name='uq_family_connection'),)
 
-# [FIX] PERBAIKAN PENTING DI SINI
 class EmergencyContact(db.Model):
     __tablename__ = 'emergency_contacts'
     id = db.Column(db.Integer, primary_key=True)
-    # [FIX 1] Mengganti 'lansia_user_id' -> 'user_id' agar standar
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     name = db.Column(db.String(100), nullable=False)
     phone = db.Column(db.String(20), nullable=False)
-    # [FIX 2] Mengganti 'relation' -> 'relationship' agar sama dengan Controller
     relationship = db.Column(db.String(50)) 
     is_primary = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 # ==============================================================================
-# 3. CONTENT & CMS MODELS
-# ==============================================================================
-class ContentItem(db.Model):
-    __tablename__ = 'content_items'
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(255), nullable=False)
-    slug = db.Column(db.String(300), unique=True, index=True)
-    excerpt = db.Column(db.String(500))
-    content_text = db.Column(db.Text)
-    content_type = db.Column(db.String(50), default='article') 
-    category = db.Column(db.String(50), default='kesehatan')
-    thumbnail_url = db.Column(db.String(500))
-    media_url = db.Column(db.String(500))
-    embed_url = db.Column(db.String(500))
-    embed_provider = db.Column(db.String(50))
-    embed_id = db.Column(db.String(100))
-    embed_type = db.Column(db.String(50))
-    embed_code = db.Column(db.Text)
-    duration = db.Column(db.Integer)
-    
-    is_audio_only = db.Column(db.Boolean, default=False)
-    has_subtitles = db.Column(db.Boolean, default=False)
-    has_transcript = db.Column(db.Boolean, default=False)
-    has_audio_description = db.Column(db.Boolean, default=False)
-    accessibility_score = db.Column(db.Integer, default=0)
-    
-    is_published = db.Column(db.Boolean, default=False, index=True)
-    is_featured = db.Column(db.Boolean, default=False)
-    is_pinned = db.Column(db.Boolean, default=False)
-    view_count = db.Column(db.Integer, default=0)
-    
-    published_at = db.Column(db.DateTime)
-    scheduled_at = db.Column(db.DateTime)
-    
-    author_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'))
-    url_analysis_id = db.Column(db.Integer, db.ForeignKey('url_analyses.id', ondelete='SET NULL'), nullable=True)
-
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        if not self.slug and self.title: 
-            self.slug = generate_slug(self.title)
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'title': self.title,
-            'slug': self.slug,
-            'content_type': self.content_type,
-            'category': self.category,
-            'thumbnail_url': self.thumbnail_url,
-            'view_count': self.view_count,
-            'created_at': self.created_at.isoformat()
-        }
-
-class ContentTranscript(db.Model):
-    __tablename__ = 'content_transcripts'
-    id = db.Column(db.Integer, primary_key=True)
-    content_id = db.Column(db.Integer, db.ForeignKey('content_items.id', ondelete='CASCADE'), nullable=False)
-    transcript_type = db.Column(db.String(50), default='full_transcript')
-    content = db.Column(db.Text)
-    language = db.Column(db.String(10), default='id')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-class UrlAnalysis(db.Model):
-    __tablename__ = 'url_analyses'
-    id = db.Column(db.Integer, primary_key=True)
-    original_url = db.Column(db.String(500), nullable=False)
-    title = db.Column(db.String(500))
-    is_valid = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    content_items = db.relationship('ContentItem', backref='url_analysis', lazy='dynamic')
-
-class ContentConsumption(db.Model):
-    __tablename__ = 'content_consumption'
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'))
-    content_id = db.Column(db.Integer, db.ForeignKey('content_items.id', ondelete='CASCADE'))
-    progress_seconds = db.Column(db.Integer, default=0) 
-    is_finished = db.Column(db.Boolean, default=False)
-    last_accessed = db.Column(db.DateTime, default=datetime.utcnow)
-    consumption_type = db.Column(db.String(20), default='view')
-    start_time = db.Column(db.DateTime)
-    end_time = db.Column(db.DateTime)
-    device_type = db.Column(db.String(50))
-    player_used = db.Column(db.String(20))
-
-# ==============================================================================
-# 4. COMMUNITY ACTIVITY (EVENTS)
+# 3. COMMUNITY ACTIVITY & LOGS
 # ==============================================================================
 class Activity(db.Model):
-    """Model ini untuk Kegiatan Komunitas / Event (Bukan checklist harian)"""
     __tablename__ = 'activities'
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text)
     location = db.Column(db.String(200))
-    
     activity_type = db.Column(db.String(50), default='umum') 
     start_time = db.Column(db.DateTime, nullable=False, index=True) 
     end_time = db.Column(db.DateTime)
@@ -229,7 +81,6 @@ class Activity(db.Model):
     is_recurring = db.Column(db.Boolean, default=False)
     recurrence_pattern = db.Column(db.String(50))
     is_active = db.Column(db.Boolean, default=True)
-    
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -241,40 +92,26 @@ class ActivityParticipant(db.Model):
     status = db.Column(db.String(20), default='registered') 
     registered_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# ==============================================================================
-# 5. PERSONAL HEALTH & DAILY SCHEDULE (NEW FOR PHASE 5)
-# ==============================================================================
 class DailyTask(db.Model):
-    """Checklist kegiatan harian (Makan, Mandi, Senam sendiri)"""
     __tablename__ = 'daily_tasks'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     title = db.Column(db.String(100), nullable=False)
     description = db.Column(db.String(255), nullable=True)
-    time = db.Column(db.String(50), nullable=False) # Format "07:00"
+    time = db.Column(db.String(50), nullable=False)
     is_completed = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    def __repr__(self):
-        return f'<DailyTask {self.title}>'
-
 class Medication(db.Model):
-    """Jadwal minum obat"""
     __tablename__ = 'medication'
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     medicine_name = db.Column(db.String(100), nullable=False)
     dosage = db.Column(db.String(50), nullable=True)
-    time = db.Column(db.String(50), nullable=False) # Format "13:00"
+    time = db.Column(db.String(50), nullable=False)
     is_taken = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    def __repr__(self):
-        return f'<Medication {self.medicine_name}>'
-
-# ==============================================================================
-# 6. SYSTEM LOGS
-# ==============================================================================
 class SystemLog(db.Model):
     __tablename__ = 'system_logs'
     id = db.Column(db.Integer, primary_key=True)
@@ -285,12 +122,14 @@ class SystemLog(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 # ==============================================================================
-# SETUP RELATIONSHIPS (LATE BINDING)
+# SETUP RELATIONSHIPS (PENGHUBUNG ANTAR FILE)
 # ==============================================================================
 def setup_relationships():
+    # Profile & Lansia
     User.profile = db.relationship('UserProfile', backref='user', uselist=False, cascade='all, delete-orphan')
     User.lansia_profile = db.relationship('LansiaProfile', backref='user', uselist=False, cascade='all, delete-orphan')
     
+    # OTP
     User.otp_sessions = db.relationship(
         'OTPSession', 
         primaryjoin='foreign(OTPSession.phone) == User.phone', 
@@ -298,22 +137,21 @@ def setup_relationships():
         cascade='all, delete-orphan'
     )
     
-    User.content_items = db.relationship('ContentItem', backref='author', lazy='dynamic')
-    
-    # Community Activities (Events)
+    # Content Relationships (Sudah di define di User dan ContentItem, kita tinggal sambung yang complex)
+    ContentItem.transcripts = db.relationship('ContentTranscript', backref='content_item', lazy='dynamic', cascade='all, delete-orphan')
+    ContentItem.consumptions = db.relationship('ContentConsumption', backref='content_item', lazy='dynamic', cascade='all, delete-orphan')
+
+    # Community Activities
     User.activities = db.relationship('Activity', backref='creator', lazy='dynamic', foreign_keys='Activity.created_by')
     User.participations = db.relationship('ActivityParticipant', backref='user', lazy='dynamic')
+    Activity.participants = db.relationship('ActivityParticipant', backref='activity', lazy='dynamic', cascade='all, delete-orphan')
     
     # Personal Schedules
     User.daily_tasks = db.relationship('DailyTask', backref='user', lazy='dynamic', cascade='all, delete-orphan')
     User.medications = db.relationship('Medication', backref='user', lazy='dynamic', cascade='all, delete-orphan')
     
-    # [FIX 3] Update relasi EmergencyContact sesuai perubahan kolom 'user_id'
+    # Emergency Contact
     User.emergency_contacts = db.relationship('EmergencyContact', backref='lansia', lazy='dynamic', cascade='all, delete-orphan')
-    
-    ContentItem.transcripts = db.relationship('ContentTranscript', backref='content_item', lazy='dynamic', cascade='all, delete-orphan')
-    ContentItem.consumptions = db.relationship('ContentConsumption', backref='content_item', lazy='dynamic', cascade='all, delete-orphan')
-    
-    Activity.participants = db.relationship('ActivityParticipant', backref='activity', lazy='dynamic', cascade='all, delete-orphan')
 
+# JALANKAN SETUP
 setup_relationships()
