@@ -8,24 +8,24 @@ class AuthService extends ChangeNotifier {
   
   String? _token;
   bool _isAuthenticated = false;
-  bool _isInitialized = false; // [BARU] Penanda proses init selesai
+  bool _isInitialized = false; 
   String? _userIdentifier;
   Map<String, dynamic>? _currentUser;
 
-  AuthService() {
-    _initialize();
-  }
+  // [FIX] Hapus pemanggilan _initialize() dari constructor
+  AuthService();
 
   // Getters
   bool get isAuthenticated => _isAuthenticated;
-  bool get isInitialized => _isInitialized; // Getter baru
+  bool get isInitialized => _isInitialized;
   String? get userIdentifier => _userIdentifier;
   String? get token => _token;
   Map<String, dynamic>? get currentUser => _currentUser;
 
-  /// Inisialisasi: Memuat sesi login yang tersimpan (Auto-Login)
-  Future<void> _initialize() async {
-    if (kDebugMode) print("🔐 AuthService: Memulai inisialisasi...");
+  /// [FIX] Mengubah nama _initialize menjadi checkLoginStatus dan membuatnya public
+  /// Agar bisa dipanggil/ditunggu oleh main.dart
+  Future<bool> checkLoginStatus() async {
+    if (kDebugMode) print("🔐 AuthService: Memeriksa status login...");
     
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -43,19 +43,20 @@ class AuthService extends ChangeNotifier {
             _currentUser = json.decode(userJson);
           } catch (e) {
             debugPrint('⚠️ Error parsing user json: $e');
-            // Jangan logout otomatis dulu, biarkan token bekerja
           }
         }
       } else {
         if (kDebugMode) print("ℹ️ AuthService: Tidak ada token tersimpan.");
+        _isAuthenticated = false;
       }
     } catch (e) {
       debugPrint("❌ AuthService Init Error: $e");
+      _isAuthenticated = false;
     } finally {
-      // Apapun yang terjadi, tandai init selesai agar Router bisa jalan
       _isInitialized = true;
       notifyListeners();
     }
+    return _isAuthenticated;
   }
 
   /// Fungsi Login Utama
@@ -67,35 +68,39 @@ class AuthService extends ChangeNotifier {
       final cleanPhone = phone.trim();
       final cleanPassword = password.trim(); 
 
-      final response = await _apiService.post('/api/v1/auth/login', data: {
+      // Sesuaikan path dengan backend (/auth/login)
+      final response = await _apiService.post('/auth/login', data: {
         'phone': cleanPhone, 
         'password': cleanPassword,
       });
 
       final data = response.data;
       
-      // 1. Ambil Token
-      _token = data['access_token'] ?? data['token'];
-      
-      // 2. Ambil Data User
-      if (data['user'] != null) {
-        _currentUser = data['user'];
-      } else if (data['data'] != null && data['data']['user'] != null) {
-        _currentUser = data['data']['user'];
+      // Handle response token
+      if (data['access_token'] != null || data['token'] != null) {
+        _token = data['access_token'] ?? data['token'];
+        
+        // Handle response user
+        if (data['user'] != null) {
+          _currentUser = data['user'];
+        } else if (data['data'] != null && data['data']['user'] != null) {
+          _currentUser = data['data']['user'];
+        }
+
+        _userIdentifier = cleanPhone;
+        _isAuthenticated = true;
+
+        if (_token != null) await prefs.setString('auth_token', _token!);
+        if (_userIdentifier != null) await prefs.setString('user_identifier', _userIdentifier!);
+        if (_currentUser != null) await prefs.setString('current_user', json.encode(_currentUser));
+
+        if (kDebugMode) print("✅ Login Berhasil!");
+        notifyListeners();
+        return true;
+      } else {
+         if (kDebugMode) print("⚠️ Login Gagal: Struktur response tidak sesuai");
+         return false;
       }
-
-      // 3. Set State Lokal
-      _userIdentifier = cleanPhone;
-      _isAuthenticated = true;
-
-      // 4. Simpan ke Penyimpanan Lokal
-      if (_token != null) await prefs.setString('auth_token', _token!);
-      if (_userIdentifier != null) await prefs.setString('user_identifier', _userIdentifier!);
-      if (_currentUser != null) await prefs.setString('current_user', json.encode(_currentUser));
-
-      if (kDebugMode) print("✅ Login Berhasil!");
-      notifyListeners();
-      return true;
 
     } catch (e) {
       if (kDebugMode) print('🔥 Login Gagal: $e');
@@ -111,7 +116,7 @@ class AuthService extends ChangeNotifier {
     await prefs.remove('auth_token');
     await prefs.remove('user_identifier');
     await prefs.remove('current_user');
-    await prefs.clear();
+    // await prefs.clear(); // Opsional
 
     _token = null;
     _userIdentifier = null;

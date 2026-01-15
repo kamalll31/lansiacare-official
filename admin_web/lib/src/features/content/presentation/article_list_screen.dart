@@ -21,7 +21,6 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
   @override
   void initState() {
     super.initState();
-    // Load data awal
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         context.read<ContentViewModel>().fetchContent();
@@ -36,7 +35,6 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
     super.dispose();
   }
 
-  // Listener untuk Search Bar (Debounce)
   void _onSearchChanged(String query) {
     if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 500), () {
@@ -48,18 +46,15 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Gunakan Consumer untuk mendengarkan perubahan state global (Error/Success)
     return Consumer<ContentViewModel>(
       builder: (context, viewModel, child) {
         
-        // Listener Efek Samping (Snackbar)
-        // Kita gunakan addPostFrameCallback agar tidak error saat build widget
         if (viewModel.errorMessage != null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text(viewModel.errorMessage!), backgroundColor: Colors.red),
             );
-            viewModel.clearErrors(); // Reset error setelah ditampilkan
+            viewModel.clearErrors(); 
           });
         }
         
@@ -74,7 +69,7 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
 
         return Scaffold(
           key: _scaffoldKey,
-          backgroundColor: Colors.grey[50], // Background agak abu agar Card menonjol
+          backgroundColor: Colors.grey[50], 
           drawer: const AppDrawer(), 
           appBar: AppBar(
             title: const Text('Manajemen Konten', style: TextStyle(color: Colors.black87)),
@@ -91,10 +86,8 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
           ),
           floatingActionButton: FloatingActionButton.extended(
             onPressed: () {
-               // Arahkan ke halaman form (asumsikan rute sudah ada)
-               // context.go('/content/add'); 
                ScaffoldMessenger.of(context).showSnackBar(
-                 const SnackBar(content: Text('Fitur Tambah Konten akan segera aktif di form screen')),
+                 const SnackBar(content: Text('Fitur Tambah Konten akan segera aktif')),
                );
             },
             icon: const Icon(Icons.add),
@@ -102,7 +95,7 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
           ),
           body: Column(
             children: [
-              // 1. HEADER & SEARCH
+              // HEADER & SEARCH
               Container(
                 color: Colors.white,
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -122,7 +115,6 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    // FILTER CHIPS
                     Row(
                       children: [
                         _buildFilterChip('Semua', 'all', viewModel),
@@ -136,7 +128,6 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
                 ),
               ),
               
-              // 2. CONTENT LIST
               Expanded(
                 child: viewModel.isLoading
                     ? const Center(child: CircularProgressIndicator())
@@ -159,8 +150,6 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
   }
 
   Widget _buildFilterChip(String label, String value, ContentViewModel viewModel) {
-    final isSelected = (viewModel.typeFilter ?? 'all') == value;
-    // Handle 'all' logic secara manual jika typeFilter null
     final effectiveSelected = value == 'all' ? viewModel.typeFilter == null : viewModel.typeFilter == value;
 
     return ChoiceChip(
@@ -191,6 +180,9 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
   }
 
   Widget _buildContentCard(BuildContext context, ContentItem item, ContentViewModel viewModel) {
+    // [FIX] Mengambil properti isVideo dari Enum ContentType
+    final bool isVideoContent = item.contentType.isVideo; 
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 0,
@@ -203,7 +195,6 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // THUMBNAIL
             Container(
               width: 80,
               height: 60,
@@ -215,12 +206,11 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
                     : null,
               ),
               child: item.thumbnailUrl == null 
-                  ? Icon(Icons.image, color: Colors.grey[400]) 
+                  // [FIX] Menggunakan icon dari Enum
+                  ? Icon(item.contentType.icon, color: Colors.grey[400]) 
                   : null,
             ),
             const SizedBox(width: 12),
-            
-            // INFO
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -237,15 +227,18 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: item.type == 'video' ? Colors.red[50] : Colors.blue[50],
+                          // [FIX] Menggunakan boolean isVideoContent
+                          color: isVideoContent ? Colors.red[50] : Colors.blue[50],
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
-                          item.type.toUpperCase(),
+                          // [FIX] Menggunakan displayName dari Enum
+                          item.contentType.displayName.toUpperCase(),
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
-                            color: item.type == 'video' ? Colors.red : Colors.blue,
+                            // [FIX] Warna berdasarkan tipe
+                            color: isVideoContent ? Colors.red : Colors.blue,
                           ),
                         ),
                       ),
@@ -262,15 +255,11 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
                 ],
               ),
             ),
-            
-            // ACTIONS
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert, color: Colors.grey),
               onSelected: (value) {
                 if (value == 'delete') {
                   _showDeleteDialog(context, item, viewModel);
-                } else if (value == 'edit') {
-                  // context.go('/content/${item.id}/edit');
                 }
               },
               itemBuilder: (context) => [
@@ -295,7 +284,7 @@ class _ArticleListScreenState extends State<ArticleListScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              viewModel.deleteContent(item.id!); // ID bisa null di model, jadi pakai bang operator jika yakin
+              viewModel.deleteContent(item.id); // ID int dari model baru tidak nullable
             },
             child: const Text('Hapus', style: TextStyle(color: Colors.red)),
           ),

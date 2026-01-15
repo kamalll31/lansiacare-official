@@ -14,13 +14,17 @@ import 'package:admin_web/src/features/dashboard/presentation/dashboard_screen.d
 import 'package:admin_web/src/features/users/presentation/user_list_screen.dart'; 
 import 'package:admin_web/src/features/users/presentation/user_detail_screen.dart';
 
+// --- [BARU] FEATURE SCREENS ---
+import 'package:admin_web/src/features/content/presentation/article_list_screen.dart';
+import 'package:admin_web/src/features/emergencies/presentation/emergency_list_screen.dart';
+import 'package:admin_web/src/features/analytics/presentation/analytics_screen.dart';
+
 final GlobalKey<NavigatorState> _rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 
 final router = GoRouter(
   navigatorKey: _rootNavigatorKey,
   
-  // [FIX 1] Ubah start awal langsung ke Login. 
-  // (Splash screen visual sudah ditangani oleh main.dart)
+  // Start awal ke Login
   initialLocation: '/login', 
 
   redirect: (context, state) {
@@ -31,19 +35,17 @@ final router = GoRouter(
     final isLoggingIn = currentPath == '/login';
     final isSplash = currentPath == '/';
 
-    // [FIX 2 - LOGIC ANTI MACET]
-    // Jika BELUM Login dan TIDAK sedang di halaman login -> LEMPAR KE LOGIN
-    // (Kita hapus pengecekan '!isSplash' agar tidak nyangkut)
+    // 1. Jika belum login & bukan di halaman login -> Lempar ke Login
     if (!isLoggedIn && !isLoggingIn) {
       return '/login';
     }
 
-    // Jika SUDAH Login tapi masih di halaman Login atau Splash -> LEMPAR KE DASHBOARD
+    // 2. Jika sudah login & masih di halaman login/splash -> Lempar ke Dashboard
     if (isLoggedIn && (isLoggingIn || isSplash)) {
       return '/dashboard';
     }
 
-    return null; // Lanjut ke halaman yang dituju
+    return null; // Lanjut sesuai tujuan
   },
   
   routes: [
@@ -79,18 +81,37 @@ final router = GoRouter(
       ],
     ),
 
-    // --- PLACEHOLDERS ---
+    // --- [FIX] CONTENT MANAGEMENT ---
     GoRoute(
       path: '/content',
-      builder: (context, state) => const _PlaceholderScreen(title: "Manajemen Konten"),
+      name: 'content',
+      builder: (context, state) => const ArticleListScreen(), // Gunakan Screen Asli
+      routes: [
+        // Rute untuk Tambah Konten (Sementara Placeholder agar tidak crash)
+        GoRoute(
+          path: 'new',
+          builder: (context, state) => const _PlaceholderScreen(title: "Editor Konten Baru"),
+        ),
+        // Rute untuk Edit Konten
+        GoRoute(
+          path: ':id/edit',
+          builder: (context, state) => const _PlaceholderScreen(title: "Edit Konten"),
+        ),
+      ],
     ),
+
+    // --- [FIX] EMERGENCY MONITORING ---
     GoRoute(
       path: '/emergencies',
-      builder: (context, state) => const _PlaceholderScreen(title: "Daftar Darurat"),
+      name: 'emergencies',
+      builder: (context, state) => const EmergencyListScreen(), // Gunakan Screen Asli
     ),
+
+    // --- [FIX] ANALYTICS ---
     GoRoute(
       path: '/analytics',
-      builder: (context, state) => const _PlaceholderScreen(title: "Analitik"),
+      name: 'analytics',
+      builder: (context, state) => const AnalyticsScreen(), // Gunakan Screen Asli
     ),
   ],
 
@@ -99,7 +120,7 @@ final router = GoRouter(
   ),
 );
 
-// Widget dummy
+// Widget dummy (Hanya dipakai untuk sub-halaman yang belum kita buat)
 class _PlaceholderScreen extends StatelessWidget {
   final String title;
   const _PlaceholderScreen({required this.title});
