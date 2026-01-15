@@ -2,7 +2,7 @@
 
 class AppConfig {
   // Private Constructor
-  AppConfig._();
+  AppConfig._(); //
 
   // =========================================================
   // 1. URL BACKEND (HARDCODED)
@@ -16,7 +16,7 @@ class AppConfig {
   // =========================================================
   // 2. SUPABASE CONFIG (Opsional)
   // =========================================================
-  
+
   // Biarkan string kosong dulu jika belum urgent dipakai
   static String get supabaseUrl => '';
   static String get supabaseAnonKey => '';
