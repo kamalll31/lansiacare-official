@@ -1,31 +1,31 @@
-from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask import Blueprint, request, jsonify, current_app
+from flask_jwt_extended import jwt_required, get_jwt_identity, get_jwt
 from app import db
-from app.models import User, UserProfile, Activity, FamilyConnection, ContentItem, SystemLog, EmergencyContact
+from app.models import User, UserProfile, Activity, FamilyConnection, ContentItem, SystemLog, EmergencyContact, ContentConsumption
 from datetime import datetime, timedelta
-from sqlalchemy import or_, func
+from sqlalchemy import or_, func, desc
 
 admin_bp = Blueprint('admin', __name__)
-
-# --- HELPER ---
-def is_admin(user_id):
-    user = User.query.get(user_id)
-    return user and user.role == 'admin'
 
 # ==============================
 # DASHBOARD & STATS
 # ==============================
 @admin_bp.route('/dashboard/stats', methods=['GET'])
-# @jwt_required() 
+@jwt_required() 
 def get_dashboard_stats():
     try:
+        # 1. CEK ADMIN (Wajib)
+        claims = get_jwt()
+        if claims.get('role') != 'admin':
+            return jsonify({'success': False, 'error': 'Unauthorized access'}), 403
+
         # Hitung statistik dasar
         total_users = User.query.count()
         total_lansia = User.query.filter_by(role='lansia').count()
         total_keluarga = User.query.filter_by(role='keluarga').count()
         total_activities = Activity.query.count()
         
-        # [ADAPTASI DB] SystemLog pakai 'action', bukan 'log_type'
+        # SystemLog pakai 'action'
         total_emergencies = SystemLog.query.filter(SystemLog.action.ilike('%EMERGENCY%')).count()
         
         # User aktif 24 jam terakhir
@@ -38,12 +38,11 @@ def get_dashboard_stats():
         # Statistik konten
         total_content = ContentItem.query.count()
         
-        # Emergency Contacts (Pakai user_id)
+        # Emergency Contacts
         total_emergency_contacts = EmergencyContact.query.count()
         users_with_emergency_contacts = db.session.query(EmergencyContact.user_id).distinct().count()
         
-        # [FIX PERBAIKAN FINAL DISINI]
-        # Menggunakan 'is_verified=True' karena kolom 'status' TIDAK ADA di models.py
+        # Family Connections
         total_family_connections = FamilyConnection.query.filter_by(is_verified=True).count()
 
         stats = {
@@ -63,16 +62,21 @@ def get_dashboard_stats():
         return jsonify({'success': True, 'stats': stats}), 200
         
     except Exception as e:
-        print(f"ERROR DASHBOARD: {e}")
+        current_app.logger.error(f"ERROR DASHBOARD: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # ==============================
 # USER MANAGEMENT
 # ==============================
 @admin_bp.route('/users', methods=['GET'])
-# @jwt_required()
+@jwt_required()
 def get_users():
     try:
+        # CEK ADMIN
+        claims = get_jwt()
+        if claims.get('role') != 'admin':
+            return jsonify({'success': False, 'error': 'Unauthorized access'}), 403
+
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
         role_filter = request.args.get('role')
@@ -94,7 +98,8 @@ def get_users():
         for user in users.items:
             full_name = user.profile.full_name if user.profile else "Belum set profil"
             
-            profile_data = {
+            # Gunakan to_dict() jika ada, atau manual construct
+            users_data.append({
                 'id': user.id,
                 'phone': user.phone,
                 'email': user.email,
@@ -102,9 +107,9 @@ def get_users():
                 'is_verified': user.is_verified,
                 'is_active': user.is_active,
                 'created_at': user.created_at.isoformat() if user.created_at else None,
+                'last_login': user.last_login.isoformat() if user.last_login else None,
                 'profile': {'full_name': full_name}
-            }
-            users_data.append(profile_data)
+            })
         
         return jsonify({
             'success': True,
@@ -118,9 +123,13 @@ def get_users():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @admin_bp.route('/users/<int:user_id>', methods=['GET'])
-# @jwt_required()
+@jwt_required()
 def get_user_detail(user_id):
     try:
+        claims = get_jwt()
+        if claims.get('role') != 'admin':
+            return jsonify({'success': False, 'error': 'Unauthorized access'}), 403
+
         user = User.query.get_or_404(user_id)
         
         activities_count = Activity.query.filter_by(created_by=user_id).count()
@@ -144,9 +153,13 @@ def get_user_detail(user_id):
 # LOGS & EMERGENCY
 # ==============================
 @admin_bp.route('/logs', methods=['GET'])
-# @jwt_required()
+@jwt_required()
 def get_system_logs():
     try:
+        claims = get_jwt()
+        if claims.get('role') != 'admin':
+            return jsonify({'success': False, 'error': 'Unauthorized access'}), 403
+
         page = request.args.get('page', 1, type=int)
         log_type = request.args.get('type')
         
@@ -177,9 +190,13 @@ def get_system_logs():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @admin_bp.route('/emergencies/recent', methods=['GET'])
-# @jwt_required()
+@jwt_required()
 def get_recent_emergencies():
     try:
+        claims = get_jwt()
+        if claims.get('role') != 'admin':
+            return jsonify({'success': False, 'error': 'Unauthorized access'}), 403
+
         emergencies = SystemLog.query.filter(SystemLog.action.ilike('%EMERGENCY%')).order_by(SystemLog.created_at.desc()).limit(20).all()
         
         data = []
@@ -197,5 +214,50 @@ def get_recent_emergencies():
             })
             
         return jsonify({'success': True, 'emergencies': data}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+# ==============================
+# ANALYTICS (ENDPOINT YANG HILANG)
+# ==============================
+@admin_bp.route('/analytics/user-engagement', methods=['GET'])
+@jwt_required()
+def get_user_engagement():
+    try:
+        # Data dummy atau query agregat sederhana untuk grafik
+        # Contoh: Menghitung user login per hari (jika ada tabel log login)
+        # Di sini kita ambil data simple distribution role
+        
+        lansia = User.query.filter_by(role='lansia').count()
+        keluarga = User.query.filter_by(role='keluarga').count()
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'labels': ['Lansia', 'Keluarga'],
+                'values': [lansia, keluarga]
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@admin_bp.route('/analytics/content-performance', methods=['GET'])
+@jwt_required()
+def get_content_performance():
+    try:
+        # Ambil 5 konten dengan view terbanyak
+        top_content = ContentItem.query.order_by(desc(ContentItem.view_count)).limit(5).all()
+        
+        data = []
+        for item in top_content:
+            data.append({
+                'title': item.title,
+                'views': item.view_count
+            })
+            
+        return jsonify({
+            'success': True,
+            'data': data
+        }), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500

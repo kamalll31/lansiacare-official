@@ -27,22 +27,18 @@ def create_app():
     if not database_url:
         database_url = 'sqlite:///' + os.path.join(basedir, '../instance/dev.db')
     
-    # Fix untuk Postgres di Vercel/Heroku (postgres:// -> postgresql://)
+    # Fix untuk Postgres di Vercel (postgres:// -> postgresql://)
     if database_url and database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql://", 1)
 
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
-    # [FIX] AMBIL KUNCI DARI VERCEL
-    # Tanpa SECRET_KEY, Flask Session sering crash
+    # Konfigurasi Security
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'rahasia-default-dev-key')
     app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'lansiacare-official-secret')
-    
     app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 86400 
     app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024 
-    
-    # [PENTING] Agar error asli terlihat di Log Vercel (Bukan cuma 500)
     app.config['PROPAGATE_EXCEPTIONS'] = True 
     
     # ==================================================================
@@ -52,12 +48,10 @@ def create_app():
     jwt.init_app(app)
     migrate.init_app(app, db)
     
+    # Import Models agar terbaca oleh SQLAlchemy
     with app.app_context():
-        try:
-            from app import models
-        except ImportError:
-            pass
-    
+        from app import models
+
     # ==================================================================
     # 3. KONFIGURASI CORS
     # ==================================================================
@@ -66,9 +60,12 @@ def create_app():
     # ==================================================================
     # 4. SETUP DATABASE DARURAT
     # ==================================================================
-    @app.route('/api/v1/setup-db-darurat')
+    # [FIX] Rute disesuaikan dengan vercel.json (tanpa /api/v1 di depannya)
+    # Agar bisa diakses via: https://.../setup-db-darurat?key=...
+    @app.route('/setup-db-darurat')
     def setup_database_and_admin():
-        if request.args.get('key') != "lansiacare2026":
+        setup_key = os.environ.get('SETUP_KEY', 'lansiacare2026')
+        if request.args.get('key') != setup_key:
             return jsonify({"status": "error", "message": "Unauthorized"}), 403
 
         try:
@@ -77,7 +74,7 @@ def create_app():
             db.create_all()
             status_msg = ["♻️ Database tables reset and recreated."]
 
-            from app.models import User, UserProfile
+            from app.models.user import User, UserProfile
             
             admin_phone = "08123456789"
             
@@ -87,7 +84,6 @@ def create_app():
                 is_active=True,
                 is_verified=True
             )
-            # Ini akan menggunakan bcrypt dari models/user.py
             new_admin.set_password("admin123") 
             db.session.add(new_admin)
             db.session.flush() 
@@ -112,31 +108,31 @@ def create_app():
             return jsonify({"status": "error", "message": f"Error: {str(e)}"}), 500
 
     # ==================================================================
-    # 5. REGISTER BLUEPRINTS
+    # 5. REGISTER BLUEPRINTS (TANPA TRY-EXCEPT)
     # ==================================================================
-    try:
-        from app.api.v1.auth import auth_bp
-        app.register_blueprint(auth_bp, url_prefix='/api/v1/auth')
-        
-        from app.api.v1.users import users_bp 
-        app.register_blueprint(users_bp, url_prefix='/api/v1/users')
-        
-        from app.api.v1.activities import activities_bp
-        app.register_blueprint(activities_bp, url_prefix='/api/v1/activities')
+    # Kita hapus try-except agar jika ada error import, Vercel langsung memberitahu (500)
+    # Daripada pura-pura sukses tapi rute tidak ada (404)
+    
+    from app.api.v1.auth import auth_bp
+    app.register_blueprint(auth_bp, url_prefix='/api/v1/auth')
+    
+    from app.api.v1.users import users_bp 
+    app.register_blueprint(users_bp, url_prefix='/api/v1/users')
+    
+    from app.api.v1.activities import activities_bp
+    app.register_blueprint(activities_bp, url_prefix='/api/v1/activities')
 
-        from app.api.v1.admin import admin_bp
-        app.register_blueprint(admin_bp, url_prefix='/api/v1/admin')
+    from app.api.v1.admin import admin_bp
+    app.register_blueprint(admin_bp, url_prefix='/api/v1/admin')
 
-        from app.api.v1.content import content_bp
-        app.register_blueprint(content_bp, url_prefix='/api/v1/content')
-        
-        from app.api.v1.family import family_bp
-        app.register_blueprint(family_bp, url_prefix='/api/v1/family')
+    from app.api.v1.content import content_bp
+    app.register_blueprint(content_bp, url_prefix='/api/v1/content')
+    
+    from app.api.v1.family import family_bp
+    app.register_blueprint(family_bp, url_prefix='/api/v1/family')
 
-        from app.api.v1.emergency import emergency_bp
-        app.register_blueprint(emergency_bp, url_prefix='/api/v1/emergency')
-    except ImportError as e:
-        print(f"⚠️ Blueprint Error: {e}")
+    from app.api.v1.emergency import emergency_bp
+    app.register_blueprint(emergency_bp, url_prefix='/api/v1/emergency')
 
     # ==================================================================
     # 6. BASIC ROUTES
@@ -144,7 +140,7 @@ def create_app():
     @app.route('/')
     def index():
         return jsonify({'status': 'online', 'service': 'Lansia Care Backend v1.0'})
-    #
+
     @app.route('/api/v1/health')
     def health_check():
         try:
@@ -157,4 +153,4 @@ def create_app():
     def not_found(e):
         return jsonify({'success': False, 'error': 'Endpoint not found'}), 404 
     
-    return app 
+    return app

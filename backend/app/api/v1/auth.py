@@ -4,9 +4,9 @@ from datetime import datetime, timedelta
 import random
 import logging
 
-# Pastikan Anda sudah update models.py dengan tabel OTPSession
+# Pastikan import ini sesuai dengan file models Anda
 from app.models import User, UserProfile, OTPSession, db
-#
+
 # Setup Logger
 logger = logging.getLogger(__name__)
 
@@ -20,31 +20,37 @@ def create_and_store_otp(phone, purpose='registration'):
     """
     Generate OTP random, hapus OTP lama user ini, dan simpan yang baru ke Database.
     """
-    # 1. Bersihkan OTP lama milik nomor ini agar tidak numpuk
-    OTPSession.query.filter_by(phone=phone).delete()
-    
-    # 2. Generate angka random
-    otp_code = str(random.randint(100000, 999999))
-    
-    # 3. Simpan ke Database
-    otp_session = OTPSession(
-        phone=phone, 
-        otp_code=otp_code, 
-        purpose=purpose, 
-        expires_at=datetime.utcnow() + timedelta(minutes=10) # Berlaku 10 menit
-    )
-    db.session.add(otp_session)
-    db.session.commit()
-    
-    # [PENTING] Print ke Log Server agar bisa dibaca di Dashboard Vercel
-    print(f"\n{'='*40}")
-    print(f"🔐 [OTP LOG] Phone: {phone} | CODE: {otp_code}")
-    print(f"{'='*40}\n")
-    
-    return otp_code
+    try:
+        # 1. Bersihkan OTP lama milik nomor ini agar tidak numpuk
+        OTPSession.query.filter_by(phone=phone).delete()
+        
+        # 2. Generate angka random
+        otp_code = str(random.randint(100000, 999999))
+        
+        # 3. Simpan ke Database
+        otp_session = OTPSession(
+            phone=phone, 
+            otp_code=otp_code, 
+            purpose=purpose, 
+            expires_at=datetime.utcnow() + timedelta(minutes=10), # Berlaku 10 menit
+            is_used=False
+        )
+        db.session.add(otp_session)
+        db.session.commit()
+        
+        # [PENTING] Print ke Log Server agar bisa dibaca di Dashboard Vercel
+        print(f"\n{'='*40}")
+        print(f"🔐 [OTP LOG] Phone: {phone} | CODE: {otp_code}")
+        print(f"{'='*40}\n")
+        
+        return otp_code
+    except Exception as e:
+        db.session.rollback()
+        print(f"Error creating OTP: {e}")
+        return None
 
 # ==========================================
-# 1. REGISTER (Updated: Handle Retry & Print OTP)
+# 1. REGISTER
 # ==========================================
 @auth_bp.route('/register', methods=['POST'])
 def register():
@@ -54,9 +60,8 @@ def register():
         password = data.get('password')
         full_name = data.get('full_name', '')
         email = data.get('email')
-        role = data.get('role', 'lansia') # Default role
+        role = data.get('role', 'lansia') 
         
-        # Validasi Input
         if not phone or not password:
             return jsonify({'success': False, 'error': 'Phone dan password diperlukan'}), 400
         
@@ -67,22 +72,17 @@ def register():
             if existing_user.is_verified:
                 return jsonify({'success': False, 'error': 'Nomor sudah terdaftar'}), 400
             else:
-                # [FIX LOGIC] User ada tapi belum verified -> IZINKAN DAFTAR ULANG
-                # Update password baru (jika user menggantinya)
+                # User ada tapi belum verified -> Update data
                 existing_user.set_password(password)
-                
-                # Update nama profile (jika ada perubahan)
                 if existing_user.profile:
                     existing_user.profile.full_name = full_name
                 else:
-                    # Jaga-jaga jika profil belum ada
                     new_profile = UserProfile(user_id=existing_user.id, full_name=full_name)
                     db.session.add(new_profile)
                 
                 db.session.commit()
-                # Kita gunakan existing_user untuk proses OTP selanjutnya
         else:
-            # User Benar-benar Baru -> Buat User & Profile
+            # User Baru
             new_user = User(
                 phone=phone, 
                 email=email, 
@@ -90,20 +90,21 @@ def register():
                 is_verified=False, 
                 is_active=True
             )
-            new_user.set_password(password) # Password diset di awal
+            new_user.set_password(password)
             db.session.add(new_user)
             db.session.flush() # Flush untuk dapat ID
             
             profile = UserProfile(user_id=new_user.id, full_name=full_name)
             db.session.add(profile)
             db.session.commit()
-            
-            # Update variabel existing_user agar bisa dipakai di bawah
             existing_user = new_user
         
-        # [CORE] Generate OTP & Simpan ke DB
+        # Generate OTP
         otp_code = create_and_store_otp(phone, 'registration')
         
+        if not otp_code:
+             return jsonify({'success': False, 'error': 'Gagal membuat OTP'}), 500
+
         return jsonify({
             'success': True,
             'message': 'Registrasi berhasil. Silakan verifikasi OTP.',
@@ -120,7 +121,7 @@ def register():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # ==========================================
-# 2. LOGIN (Updated: Cek OTP DB)
+# 2. LOGIN (FIXED: to_jwt_claims removed)
 # ==========================================
 @auth_bp.route('/login', methods=['POST'])
 def login():
@@ -143,7 +144,7 @@ def login():
             
         # Cek Verifikasi
         if not user.is_verified:
-            # Cek apakah ada OTP aktif di DB untuk user ini
+            # Cek OTP di DB
             active_otp = OTPSession.query.filter(
                 OTPSession.phone == user.phone,
                 OTPSession.expires_at > datetime.utcnow(),
@@ -161,9 +162,15 @@ def login():
         user.last_login = datetime.utcnow()
         db.session.commit()
         
+        # [FIX] Buat claims manual, karena user.to_jwt_claims() tidak ada di model
+        claims = {
+            'role': user.role,
+            'is_verified': user.is_verified
+        }
+
         access_token = create_access_token(
             identity=user.id,
-            additional_claims=user.to_jwt_claims(),
+            additional_claims=claims, # GANTI DI SINI
             expires_delta=timedelta(days=7)
         )
         
@@ -175,10 +182,11 @@ def login():
         }), 200
 
     except Exception as e:
+        print(f"LOGIN ERROR: {e}") # Print error ke log Vercel
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # ==========================================
-# 3. VERIFY OTP (Updated: Cek ke DB)
+# 3. VERIFY OTP (FIXED)
 # ==========================================
 @auth_bp.route('/verify-otp', methods=['POST'])
 def verify_otp():
@@ -190,34 +198,35 @@ def verify_otp():
         if not phone or not otp_code:
             return jsonify({'success': False, 'error': 'Data tidak lengkap'}), 400
             
-        # [LOGIC DB] Cari OTP di Database
+        # Cari OTP
         session = OTPSession.query.filter_by(
             phone=phone, 
             otp_code=otp_code, 
             is_used=False
         ).first()
         
-        # Validasi OTP
+        # Validasi
         if not session:
             return jsonify({'success': False, 'error': 'OTP salah atau sudah digunakan'}), 400
             
-        if session.is_expired():
+        # [FIX] Gunakan pembanding datetime langsung agar lebih aman
+        if session.expires_at < datetime.utcnow():
             return jsonify({'success': False, 'error': 'OTP sudah kadaluarsa'}), 400
             
-        # Jika Valid:
-        # 1. Tandai OTP sudah dipakai
+        # Jika Valid
         session.is_used = True
         
-        # 2. Update status User
         user = User.query.filter_by(phone=phone).first()
         if user:
             user.is_verified = True
             db.session.commit()
             
-            # 3. Auto Login (Buat Token)
+            # [FIX] Claims manual juga disini
+            claims = {'role': user.role, 'is_verified': True}
+            
             access_token = create_access_token(
                 identity=user.id,
-                additional_claims=user.to_jwt_claims()
+                additional_claims=claims
             )
             
             return jsonify({
@@ -230,6 +239,7 @@ def verify_otp():
         return jsonify({'success': False, 'error': 'User tidak ditemukan'}), 404
         
     except Exception as e:
+        db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @auth_bp.route('/me', methods=['GET'])

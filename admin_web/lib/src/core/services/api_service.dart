@@ -10,7 +10,7 @@ class ApiService {
   late Dio _dio;
   
   ApiService._internal() {
-    // [FIX] Ensure base URL does not have a trailing slash to avoid double slashes
+    // Base URL sudah mengandung '/api/v1' dari AppConfig
     String baseUrl = AppConfig.apiBaseUrl;
     if (baseUrl.endsWith('/')) {
       baseUrl = baseUrl.substring(0, baseUrl.length - 1);
@@ -42,7 +42,6 @@ class ApiService {
         if (kDebugMode) {
           print('🚀 [${options.method}] ${options.uri}');
           if (options.data != null) {
-            // [FIX] Truncate long data logs for cleaner console output
             String dataStr = options.data.toString();
             if (dataStr.length > 500) dataStr = '${dataStr.substring(0, 500)}...';
             print('📤 Data: $dataStr');
@@ -141,11 +140,12 @@ class ApiService {
   }
 
   // =================================================================
-  // SPECIFIC ENDPOINTS
+  // SPECIFIC ENDPOINTS (FIXED PATHS)
   // =================================================================
 
   // --- HEALTH CHECK ---
-  Future<Response> checkHealth() => get('/api/v1/health');
+  // [FIX] Hapus '/api/v1' karena sudah ada di Base URL
+  Future<Response> checkHealth() => get('/health');
   
   // --- CONTENT ITEMS ---
   Future<Response> getContentItems({ 
@@ -170,42 +170,51 @@ class ApiService {
     if (startDate != null && startDate.isNotEmpty) query['start_date'] = startDate;
     if (endDate != null && endDate.isNotEmpty) query['end_date'] = endDate;
     
-    return get('/api/v1/content/admin/items', queryParameters: query);
+    // [FIX] Path disederhanakan
+    return get('/content/admin/items', queryParameters: query);
   }
   
   Future<Response> analyzeUrl(String url) {
     if (url.isEmpty) throw ArgumentError('URL cannot be empty');
     if (!url.startsWith('http')) throw ArgumentError('URL must start with http:// or https://');
-    return post('/api/v1/content/admin/analyze-url', data: {'url': url});
+    // [FIX] Path disederhanakan
+    return post('/content/admin/analyze-url', data: {'url': url});
   }
 
   Future<Response> createContent(dynamic data, {Options? options}) {
-    return post('/api/v1/content/admin/items', data: data, options: options);
+    // [FIX] Path disederhanakan
+    return post('/content/admin/items', data: data, options: options);
   }
   
   Future<Response> updateContent(int contentId, dynamic data, {Options? options}) {
-    return put('/api/v1/content/admin/items/$contentId', data: data, options: options);
+    // [FIX] Path disederhanakan
+    return put('/content/admin/items/$contentId', data: data, options: options);
   }
   
   Future<Response> deleteContent(int contentId) {
-    return delete('/api/v1/content/admin/items/$contentId');
+    // [FIX] Path disederhanakan
+    return delete('/content/admin/items/$contentId');
   }
 
   Future<Response> uploadMedia(FormData data) {
-    return post('/api/v1/content/admin/upload', data: data);
+    // [FIX] Path disederhanakan
+    return post('/content/admin/upload', data: data);
   }
 
   Future<Response> getContentDetail(int contentId) {
-    return get('/api/v1/content/admin/items/$contentId');
+    // [FIX] Path disederhanakan
+    return get('/content/admin/items/$contentId');
   }
   
   Future<Response> getContentStats() {
-    return get('/api/v1/content/admin/stats');
+    // [FIX] Path disederhanakan
+    return get('/content/admin/stats');
   }
 
   // --- DASHBOARD & USERS ---
   Future<Response> getDashboardStats() {
-    return get('/api/v1/admin/dashboard/stats'); 
+    // [FIX] Path disederhanakan
+    return get('/admin/dashboard/stats'); 
   }
   
   Future<Response> getUsers({
@@ -221,11 +230,13 @@ class ApiService {
     if (role != null && role.isNotEmpty) query['role'] = role;
     if (search != null && search.isNotEmpty) query['search'] = search;
     
-    return get('/api/v1/admin/users', queryParameters: query);
+    // [FIX] Path disederhanakan
+    return get('/admin/users', queryParameters: query);
   }
   
   Future<Response> getUserDetail(int userId) {
-    return get('/api/v1/admin/users/$userId');
+    // [FIX] Path disederhanakan
+    return get('/admin/users/$userId');
   }
   
   // --- SYSTEM LOGS ---
@@ -236,17 +247,20 @@ class ApiService {
   }) {
     final query = <String, dynamic>{'page': page, 'per_page': perPage};
     if (type != null && type.isNotEmpty) query['type'] = type;
-    return get('/api/v1/admin/logs', queryParameters: query);
+    // [FIX] Path disederhanakan
+    return get('/admin/logs', queryParameters: query);
   }
   
   // --- EMERGENCIES ---
   Future<Response> getRecentEmergencies() {
-    return get('/api/v1/emergency/monitor'); // Updated to correct monitoring endpoint
+    // [FIX] Path disederhanakan
+    return get('/emergency/monitor'); 
   }
   
   // --- ANALYTICS ---
-  Future<Response> getUserEngagement() => get('/api/v1/admin/analytics/user-engagement');
-  Future<Response> getContentPerformance() => get('/api/v1/admin/analytics/content-performance');
+  // [FIX] Path disederhanakan
+  Future<Response> getUserEngagement() => get('/admin/analytics/user-engagement');
+  Future<Response> getContentPerformance() => get('/admin/analytics/content-performance');
 
   String getBaseUrl() => _dio.options.baseUrl;
 }

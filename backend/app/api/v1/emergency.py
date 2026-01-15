@@ -1,13 +1,13 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
 from app.models import EmergencyContact, User, UserProfile, FamilyConnection, SystemLog
-import datetime
+from datetime import datetime, timedelta
 
 emergency_bp = Blueprint('emergency', __name__)
 
 # ==============================================================================
-# CRUD CONTACTS
+# CRUD CONTACTS (Kontak Darurat Manual)
 # ==============================================================================
 
 @emergency_bp.route('/contacts', methods=['GET'])
@@ -31,7 +31,7 @@ def get_emergency_contacts():
         return jsonify({'contacts': contacts_data}), 200
         
     except Exception as e:
-        print(f"Error Getting Contacts: {e}")
+        current_app.logger.error(f"Error Getting Contacts: {e}")
         return jsonify({'error': str(e)}), 500
 
 @emergency_bp.route('/contacts', methods=['POST'])
@@ -44,6 +44,7 @@ def add_emergency_contact():
         if not data.get('contactName') or not data.get('phone'):
             return jsonify({'error': 'Nama dan telepon kontak diperlukan'}), 400
         
+        # Jika kontak ini diset sebagai Primary, set yang lain jadi False
         if data.get('isPrimary'):
             EmergencyContact.query.filter_by(user_id=current_user_id).update({'is_primary': False})
             db.session.commit()
@@ -66,7 +67,7 @@ def add_emergency_contact():
         
     except Exception as e:
         db.session.rollback()
-        print(f"Error Adding Contact: {e}")
+        current_app.logger.error(f"Error Adding Contact: {e}")
         return jsonify({'error': str(e)}), 500
 
 @emergency_bp.route('/contacts/<int:contact_id>', methods=['PUT'])
@@ -81,18 +82,15 @@ def update_emergency_contact(contact_id):
         if not contact:
             return jsonify({'error': 'Kontak tidak ditemukan'}), 404
         
+        # Logika switch primary
         if data.get('isPrimary') and not contact.is_primary:
             EmergencyContact.query.filter_by(user_id=current_user_id).update({'is_primary': False})
             db.session.commit()
         
-        if 'contactName' in data:
-            contact.name = data['contactName']
-        if 'phone' in data:
-            contact.phone = data['phone']
-        if 'relationship' in data:
-            contact.relationship = data['relationship']
-        if 'isPrimary' in data:
-            contact.is_primary = data['isPrimary']
+        if 'contactName' in data: contact.name = data['contactName']
+        if 'phone' in data: contact.phone = data['phone']
+        if 'relationship' in data: contact.relationship = data['relationship']
+        if 'isPrimary' in data: contact.is_primary = data['isPrimary']
         
         db.session.commit()
         return jsonify({'message': 'Kontak berhasil diupdate'}), 200
@@ -138,22 +136,25 @@ def get_contacts_stats():
         return jsonify({'error': str(e)}), 500
 
 # ==============================================================================
-# LOGIKA SOS & MONITORING
+# LOGIKA SOS & MONITORING (CORE FEATURE)
 # ==============================================================================
 
 @emergency_bp.route('/sos', methods=['POST'])
 @jwt_required()
 def trigger_sos():
+    """
+    Ditekan oleh Lansia.
+    1. Mencatat Log Sistem (Agar Admin Tahu)
+    2. Mengembalikan daftar kontak (Keluarga & Manual) yang harus dihubungi oleh HP.
+    """
     try:
         user_id = get_jwt_identity()
-        user = User.query.get(user_id)
-        user_profile = UserProfile.query.filter_by(user_id=user_id).first()
         data = request.get_json() or {}
         
-        lat = data.get('latitude')
-        long = data.get('longitude')
+        lat = data.get('latitude', 'Unknown')
+        long = data.get('longitude', 'Unknown')
         
-        # 1. LOGGING
+        # 1. CATAT LOG KE DATABASE (PENTING untuk Monitoring Admin)
         details = f"SOS Ditekan! Lokasi: {lat}, {long}"
         new_log = SystemLog(
             user_id=user_id,
@@ -165,8 +166,7 @@ def trigger_sos():
         
         sos_targets = []
 
-        # A. Keluarga (App User)
-        # [FIX] Gunakan lansia_user_id (Untuk tabel FamilyConnection, ini BENAR)
+        # A. Ambil Keluarga Terhubung (Family Connection)
         family_conns = FamilyConnection.query.filter_by(
             lansia_user_id=user_id, 
             is_verified=True
@@ -182,8 +182,7 @@ def trigger_sos():
                     'is_primary': True 
                 })
 
-        # B. Kontak Manual
-        # [FIX] Gunakan user_id (Untuk tabel EmergencyContact, ini BENAR)
+        # B. Ambil Kontak Manual
         manual_contacts = EmergencyContact.query.filter_by(user_id=user_id).all()
         
         for contact in manual_contacts:
@@ -196,8 +195,8 @@ def trigger_sos():
 
         db.session.commit()
 
-        # 3. RESPONSE
-        timestamp = datetime.datetime.utcnow().isoformat()
+        # 3. KIRIM RESPON
+        timestamp = datetime.utcnow().isoformat()
         
         return jsonify({
             'success': True,
@@ -209,26 +208,29 @@ def trigger_sos():
 
     except Exception as e:
         db.session.rollback()
+        current_app.logger.error(f"SOS ERROR: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @emergency_bp.route('/monitor', methods=['GET'])
 @jwt_required()
 def check_family_alert():
+    """
+    Dipanggil oleh Dashboard Admin atau HP Keluarga setiap beberapa detik (Polling).
+    Mengecek apakah ada sinyal SOS dalam 5 menit terakhir.
+    """
     try:
-        # [FITUR TAMBAHAN] Cek jika yang akses adalah Admin
-        # Admin butuh melihat SEMUA alert global
         current_user_id = get_jwt_identity()
         current_user = User.query.get(current_user_id)
         
-        time_threshold = datetime.datetime.utcnow() - datetime.timedelta(minutes=5)
+        # Batas waktu alert (misal: 5 menit terakhir)
+        time_threshold = datetime.utcnow() - timedelta(minutes=5)
 
-        # === LOGIKA KHUSUS ADMIN ===
+        # === SKENARIO 1: ADMIN (Melihat Semua SOS Global) ===
         if current_user and current_user.role == 'admin':
             recent_alerts = SystemLog.query.filter(
                 SystemLog.action == "EMERGENCY_SOS",
-                # [FIX - PENTING] Gunakan 'created_at' bukan 'timestamp'
                 SystemLog.created_at >= time_threshold 
-            ).all()
+            ).order_by(SystemLog.created_at.desc()).all()
             
             alerts = []
             for alert in recent_alerts:
@@ -240,12 +242,13 @@ def check_family_alert():
                     'location_info': alert.details
                 })
             
+            # Jika ada alert, status DANGER. Jika tidak, SAFE.
             return jsonify({
                 'status': 'DANGER' if alerts else 'safe', 
                 'alerts': alerts
             }), 200
 
-        # === LOGIKA UNTUK KELUARGA (EXISTING) ===
+        # === SKENARIO 2: KELUARGA (Hanya Melihat Lansia Sendiri) ===
         connections = FamilyConnection.query.filter_by(
             family_user_id=current_user_id, 
             is_verified=True
@@ -257,12 +260,12 @@ def check_family_alert():
         active_alerts = []
         
         for conn in connections:
+            # Cek log SOS spesifik milik lansia ini
             recent_sos = SystemLog.query.filter(
                 SystemLog.user_id == conn.lansia_user_id,
                 SystemLog.action == "EMERGENCY_SOS",
-                # [FIX - PENTING] Gunakan 'created_at' bukan 'timestamp'
                 SystemLog.created_at >= time_threshold
-            ).first()
+            ).order_by(SystemLog.created_at.desc()).first()
             
             if recent_sos:
                 lansia = User.query.get(conn.lansia_user_id)
@@ -271,7 +274,6 @@ def check_family_alert():
                 active_alerts.append({
                     'lansia_id': conn.lansia_user_id,
                     'name': lansia_name,
-                    # [FIX] Gunakan 'created_at'
                     'time': recent_sos.created_at.isoformat(),
                     'location_info': recent_sos.details
                 })
@@ -285,4 +287,5 @@ def check_family_alert():
             return jsonify({'status': 'safe'}), 200
 
     except Exception as e:
+        current_app.logger.error(f"MONITOR ERROR: {e}")
         return jsonify({'error': str(e)}), 500

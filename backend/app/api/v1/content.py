@@ -8,8 +8,7 @@ from sqlalchemy import desc
 
 from app import db
 # [PERBAIKAN 1] Import ContentItem (Model Baru)
-from app.models.content import ContentItem
-from app.models.user import User
+from app.models import ContentItem, User
 
 content_bp = Blueprint('content', __name__)
 
@@ -23,7 +22,7 @@ def allowed_file(filename):
 # ==============================
 # 1. ENDPOINT UPLOAD (PENTING UNTUK GAMBAR/VIDEO)
 # ==============================
-@content_bp.route('/upload', methods=['POST'])
+@content_bp.route('/admin/upload', methods=['POST'])
 @jwt_required()
 def upload_media():
     """Upload file (Gambar/Video) dan kembalikan URL"""
@@ -41,7 +40,8 @@ def upload_media():
             filename = secure_filename(file.filename)
             unique_filename = f"{uuid.uuid4().hex}_{filename}"
             
-            # 2. Pastikan folder upload ada
+            # 2. Pastikan folder upload ada (Untuk Vercel, ini ephemeral/sementara)
+            # Idealnya gunakan Supabase Storage, tapi untuk MVP ini oke
             upload_dir = os.path.join(current_app.root_path, 'static', 'uploads')
             if not os.path.exists(upload_dir):
                 os.makedirs(upload_dir)
@@ -76,26 +76,34 @@ def upload_media():
 # ==============================
 
 # GET ALL (Bisa difilter)
-@content_bp.route('', methods=['GET'])
+@content_bp.route('/admin/items', methods=['GET'])
+@jwt_required()
 def get_contents():
     try:
         # Filter query params
         type_filter = request.args.get('type')     # article / video
         category_filter = request.args.get('category')
         status_filter = request.args.get('status') # published / draft
+        search_filter = request.args.get('search')
         
-        # [PERBAIKAN 2] Pakai ContentItem
+        # [PERBAIKAN 2] Pakai ContentItem dengan nama kolom yang benar
         query = ContentItem.query
         
+        # Filter Type (Mapping: 'article' -> content_type='article')
         if type_filter:
-            query = query.filter_by(content_type=type_filter)
+            query = query.filter(ContentItem.content_type == type_filter)
+            
         if category_filter:
-            query = query.filter_by(category=category_filter)
+            query = query.filter(ContentItem.category == category_filter)
+            
+        if search_filter:
+            query = query.filter(ContentItem.title.ilike(f"%{search_filter}%"))
+            
         if status_filter:
             if status_filter == 'published':
-                query = query.filter_by(is_published=True)
+                query = query.filter(ContentItem.is_published == True)
             elif status_filter == 'draft':
-                query = query.filter_by(is_published=False)
+                query = query.filter(ContentItem.is_published == False)
             
         # Urutkan terbaru
         contents = query.order_by(desc(ContentItem.created_at)).all()
@@ -109,19 +117,35 @@ def get_contents():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # GET DETAIL
-@content_bp.route('/<int:id>', methods=['GET'])
+@content_bp.route('/admin/items/<int:id>', methods=['GET'])
+@jwt_required()
 def get_content_detail(id):
-    content = ContentItem.query.get_or_404(id)
+    content = ContentItem.query.get(id)
+    if not content:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
     return jsonify({'success': True, 'data': content.to_dict()}), 200
 
 # CREATE
-@content_bp.route('', methods=['POST'])
+@content_bp.route('/admin/items', methods=['POST'])
 @jwt_required()
 def create_content():
     try:
         # Ambil identitas user (author)
-        current_user_id = get_jwt_identity() # Ini biasanya ID user dari token
+        current_user_identity = get_jwt_identity() 
         
+        # Logic extra aman untuk ambil ID user
+        author_id = None
+        if isinstance(current_user_identity, int):
+            author_id = current_user_identity
+        elif isinstance(current_user_identity, str) and current_user_identity.isdigit():
+            author_id = int(current_user_identity)
+        elif isinstance(current_user_identity, dict):
+            author_id = current_user_identity.get('id')
+
+        # Fallback jika gagal (Optional, sebaiknya jangan fallback ke admin sembarang)
+        if not author_id:
+             return jsonify({'success': False, 'error': 'Invalid User Token'}), 401
+
         data = request.get_json()
         
         if not data.get('title'):
@@ -131,44 +155,31 @@ def create_content():
         is_published = True
         if data.get('status') == 'draft':
             is_published = False
+        if 'is_published' in data: # Jika FE kirim boolean langsung
+            is_published = data['is_published']
 
-        # [PERBAIKAN 3] Mapping ke Model Baru
-        # 'body' di request mapping ke 'content_text' di database
-        # 'status' -> 'is_published'
-        # Tambahkan 'author_id'
-        
-        # Coba ambil user ID (jika get_jwt_identity mengembalikan string/dict, sesuaikan)
-        author_id = None
-        if isinstance(current_user_id, dict): 
-             author_id = current_user_id.get('id')
-        elif isinstance(current_user_id, (int, str)) and str(current_user_id).isdigit():
-             author_id = int(current_user_id)
-        
-        # Jika author_id masih None, coba fallback cari admin pertama (HANYA DARURAT)
-        if not author_id:
-            admin = User.query.filter_by(role='admin').first()
-            if admin: author_id = admin.id
-
+        # [PERBAIKAN 3] Mapping ke Model Baru yang Benar
         new_content = ContentItem(
             title=data['title'],
             
-            # Map 'body' dari FE ke 'content_text' atau 'body' di DB
-            # Di model baru ada 'body' (summary) dan 'content_text' (full)
-            # Kita isi keduanya untuk keamanan
-            body=data.get('body', ''), 
-            content_text=data.get('body', ''),
+            # Map 'body' (JSON) -> 'content_text' (DB)
+            content_text=data.get('body', ''), 
+            excerpt=data.get('excerpt', ''),
             
-            content_type=data.get('content_type', 'article'),
-            thumbnail_url=data.get('thumbnail_url'),
-            video_url=data.get('video_url'),
+            content_type=data.get('type', 'article'), # FE kirim 'type'
             category=data.get('category', 'umum'),
             
+            # Map Media
+            thumbnail_url=data.get('thumbnail_url'),
+            media_url=data.get('content_url'),  # FE kirim 'content_url' -> DB 'media_url'
+            embed_url=data.get('embed_url'),    # Untuk YouTube Link
+            
             # Status
-            status=data.get('status', 'published'),
             is_published=is_published,
             
-            # Author (Wajib di model baru)
-            author_id=author_id
+            # Author
+            author_id=author_id,
+            created_at=datetime.utcnow()
         )
         
         db.session.add(new_content)
@@ -182,33 +193,41 @@ def create_content():
         
     except Exception as e:
         db.session.rollback()
-        # Print error detail ke log server untuk debugging
         current_app.logger.error(f"Error creating content: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # UPDATE
-@content_bp.route('/<int:id>', methods=['PUT'])
+@content_bp.route('/admin/items/<int:id>', methods=['PUT'])
 @jwt_required()
 def update_content(id):
     try:
-        content = ContentItem.query.get_or_404(id)
+        content = ContentItem.query.get(id)
+        if not content:
+            return jsonify({'success': False, 'error': 'Konten tidak ditemukan'}), 404
+
         data = request.get_json()
         
-        # Update field dinamis
+        # Update field dinamis (Mapping yang Benar)
+        if 'title' in data: content.title = data['title']
+        
         # Map 'body' -> 'content_text'
-        if 'body' in data:
-            content.body = data['body']
+        if 'body' in data: 
             content.content_text = data['body']
             
-        if 'title' in data: content.title = data['title']
-        if 'content_type' in data: content.content_type = data['content_type']
-        if 'thumbnail_url' in data: content.thumbnail_url = data['thumbnail_url']
-        if 'video_url' in data: content.video_url = data['video_url']
+        if 'excerpt' in data: content.excerpt = data['excerpt']
+        if 'type' in data: content.content_type = data['type']
         if 'category' in data: content.category = data['category']
         
+        # Media
+        if 'thumbnail_url' in data: content.thumbnail_url = data['thumbnail_url']
+        if 'content_url' in data: content.media_url = data['content_url'] # Mapping!
+        if 'embed_url' in data: content.embed_url = data['embed_url']
+        
+        # Status
         if 'status' in data:
-            content.status = data['status']
             content.is_published = (data['status'] == 'published')
+        if 'is_published' in data:
+            content.is_published = data['is_published']
         
         content.updated_at = datetime.utcnow()
         db.session.commit()
@@ -224,11 +243,14 @@ def update_content(id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 # DELETE
-@content_bp.route('/<int:id>', methods=['DELETE'])
+@content_bp.route('/admin/items/<int:id>', methods=['DELETE'])
 @jwt_required()
 def delete_content(id):
     try:
-        content = ContentItem.query.get_or_404(id)
+        content = ContentItem.query.get(id)
+        if not content:
+            return jsonify({'success': False, 'error': 'Konten tidak ditemukan'}), 404
+            
         db.session.delete(content)
         db.session.commit()
         return jsonify({'success': True, 'message': 'Konten berhasil dihapus'}), 200

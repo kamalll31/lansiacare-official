@@ -1,13 +1,38 @@
 {
   "version": 2,
   "builds": [
-    { "src": "backend/run.py", "use": "@vercel/python" },
-    { "src": "admin_web/build/web/**", "use": "@vercel/static" }
+    {
+      "src": "backend/run.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "admin_web/build/web/**",
+      "use": "@vercel/static"
+    }
   ],
   "rewrites": [
-    { "source": "/api/v1/(.*)", "destination": "backend/run.py" },
-    { "source": "/api/(.*)", "destination": "backend/run.py" },
-    { "source": "/setup-db-darurat", "destination": "backend/run.py" },
-    { "source": "/(.*)", "destination": "admin_web/build/web/index.html" }
+    {
+      "source": "/api/(.*)",
+      "destination": "backend/run.py"
+    },
+    {
+      "source": "/setup-db-darurat",
+      "destination": "backend/run.py"
+    },
+    {
+      "source": "/((?!api|setup-db-darurat).*)",
+      "destination": "admin_web/build/web/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Credentials", "value": "true" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT" },
+        { "key": "Access-Control-Allow-Headers", "value": "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization" }
+      ]
+    }
   ]
 }
