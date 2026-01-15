@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:admin_web/src/features/emergencies/view_models/emergency_view_model.dart';
 import 'package:admin_web/src/shared/widgets/app_drawer.dart';
-import 'package:admin_web/src/shared/widgets/custom_app_bar.dart';
+import 'package:admin_web/src/shared/widgets/custom_app_bar.dart'; // Pastikan path ini benar
 
 class EmergencyListScreen extends StatefulWidget {
   const EmergencyListScreen({super.key});
@@ -15,41 +16,49 @@ class _EmergencyListScreenState extends State<EmergencyListScreen> {
   @override
   void initState() {
     super.initState();
-    // [FIX] Memanggil data secara otomatis saat halaman dibuka
+    // [FIX] Memulai Polling Monitoring (Bukan sekadar fetch sekali)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        context.read<EmergencyViewModel>().fetchEmergencies();
+        context.read<EmergencyViewModel>().startMonitoring();
       }
     });
   }
 
   @override
+  void dispose() {
+    // [FIX] Stop polling saat pindah halaman agar hemat resource
+    // context.read<EmergencyViewModel>().stopMonitoring(); // (Optional, krn sudah di handle di dispose VM)
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // [FIX] Kita gunakan Provider global yang sudah ada di main.dart
-    // Jangan membuat ChangeNotifierProvider baru di sini agar state konsisten
     return Consumer<EmergencyViewModel>(
       builder: (context, viewModel, child) {
         return Scaffold(
-          appBar: CustomAppBar(
-            title: 'Monitor Darurat (SOS)',
+          appBar: AppBar(
+            title: const Text('Monitor Darurat (SOS)', style: TextStyle(color: Colors.black)),
+            backgroundColor: Colors.white,
+            elevation: 0,
+            iconTheme: const IconThemeData(color: Colors.black),
             actions: [
-              // Indikator Live
+              // Indikator Live Pulse
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 margin: const EdgeInsets.only(right: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.red[50],
+                  color: viewModel.isDanger ? Colors.red[50] : Colors.green[50],
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.red),
+                  border: Border.all(color: viewModel.isDanger ? Colors.red : Colors.green),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.circle, size: 10, color: Colors.red),
+                    Icon(Icons.circle, size: 10, color: viewModel.isDanger ? Colors.red : Colors.green),
                     const SizedBox(width: 8),
                     Text(
-                      'LIVE MONITORING',
+                      viewModel.isDanger ? 'BAHAYA TERDETEKSI' : 'LIVE MONITORING',
                       style: TextStyle(
-                        color: Colors.red[700],
+                        color: viewModel.isDanger ? Colors.red[900] : Colors.green[900],
                         fontWeight: FontWeight.bold,
                         fontSize: 12,
                       ),
@@ -57,39 +66,113 @@ class _EmergencyListScreenState extends State<EmergencyListScreen> {
                   ],
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                tooltip: 'Refresh Data',
-                onPressed: () => viewModel.fetchEmergencies(),
-              ),
             ],
           ),
           drawer: const AppDrawer(),
-          body: _buildBody(viewModel),
+          body: Column(
+            children: [
+              // 1. BANNER BAHAYA (Hanya muncul jika ada SOS Aktif)
+              if (viewModel.isDanger) _buildDangerBanner(viewModel),
+
+              // 2. LIST RIWAYAT
+              Expanded(
+                child: viewModel.isLoading && viewModel.historyAlerts.isEmpty
+                    ? const Center(child: CircularProgressIndicator())
+                    : _buildHistoryList(viewModel),
+              ),
+            ],
+          ),
         );
       },
     );
   }
 
-  Widget _buildBody(EmergencyViewModel viewModel) {
-    if (viewModel.isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+  // --- WIDGETS ---
 
-    if (viewModel.emergencies.isEmpty) {
+  Widget _buildDangerBanner(EmergencyViewModel viewModel) {
+    return Container(
+      width: double.infinity,
+      color: Colors.red,
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 48),
+          const SizedBox(height: 8),
+          const Text(
+            'PERINGATAN: LANSIA DALAM BAHAYA!',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+          ),
+          const SizedBox(height: 12),
+          // List Active Alerts
+          ...viewModel.activeAlerts.map((alert) => Card(
+            margin: const EdgeInsets.only(bottom: 8),
+            child: ListTile(
+              leading: const CircleAvatar(
+                backgroundColor: Colors.red,
+                child: Icon(Icons.person, color: Colors.white),
+              ),
+              title: Text(alert['name'] ?? 'Lansia', style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text(alert['location_info'] ?? 'Lokasi tidak tersedia'),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.map, color: Colors.blue),
+                    onPressed: () => _openMap(alert['location_info']),
+                    tooltip: 'Lacak Lokasi',
+                  ),
+                  // Tombol telepon (jika data phone tersedia nanti)
+                  // IconButton(icon: Icon(Icons.phone, color: Colors.green), onPressed: () {}),
+                ],
+              ),
+            ),
+          )),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistoryList(EmergencyViewModel viewModel) {
+    if (viewModel.historyAlerts.isEmpty) {
       return _buildEmptyState();
     }
 
-    return RefreshIndicator(
-      onRefresh: () => viewModel.fetchEmergencies(),
-      child: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: viewModel.emergencies.length,
-        itemBuilder: (context, index) {
-          final item = viewModel.emergencies[index];
-          return _buildEmergencyCard(context, item);
-        },
-      ),
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: viewModel.historyAlerts.length,
+      itemBuilder: (context, index) {
+        final alert = viewModel.historyAlerts[index];
+        return Card(
+          elevation: 1,
+          margin: const EdgeInsets.only(bottom: 8),
+          child: ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.history, color: Colors.grey),
+            ),
+            title: Text(alert['user_name'] ?? 'User'),
+            subtitle: Text(alert['message'] ?? 'Tidak ada pesan'),
+            trailing: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  _formatTime(alert['created_at']),
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  _formatDate(alert['created_at']),
+                  style: const TextStyle(fontSize: 10, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -106,7 +189,7 @@ class _EmergencyListScreenState extends State<EmergencyListScreen> {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Tidak ada sinyal SOS aktif saat ini',
+            'Tidak ada riwayat SOS.',
             style: TextStyle(color: Colors.grey),
           ),
         ],
@@ -114,106 +197,40 @@ class _EmergencyListScreenState extends State<EmergencyListScreen> {
     );
   }
 
-  Widget _buildEmergencyCard(BuildContext context, Map<String, dynamic> item) {
-    return Card(
-      elevation: 4,
-      margin: const EdgeInsets.only(bottom: 16),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.red.withOpacity(0.5), width: 1),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.red[50],
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 32),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        item['user_name'] ?? 'Pengguna Anonim',
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.red,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'DARURAT',
-                          style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    item['message'] ?? 'Sinyal SOS dikirim tanpa pesan tambahan.',
-                    style: const TextStyle(fontSize: 14, color: Colors.black87),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      const Icon(Icons.access_time, size: 14, color: Colors.grey),
-                      const SizedBox(width: 4),
-                      Text(
-                        item['time_ago'] ?? 'Baru saja',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                      const SizedBox(width: 16),
-                      const Icon(Icons.calendar_today, size: 14, color: Colors.grey),
-                      const SizedBox(width: 4),
-                      Text(
-                        item['created_at']?.toString().split('T')[0] ?? '-',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 16),
-            Column(
-              children: [
-                ElevatedButton.icon(
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Menghubungi kontak darurat...')),
-                    );
-                  },
-                  icon: const Icon(Icons.phone),
-                  label: const Text('Hubungi'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                OutlinedButton(
-                  onPressed: () {
-                    context.read<EmergencyViewModel>().markAsResolved(item['id']);
-                  },
-                  child: const Text('Selesai'),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
+  // --- HELPERS ---
+
+  Future<void> _openMap(String? locationInfo) async {
+    if (locationInfo == null) return;
+    
+    // Logika parsing sederhana: Asumsi format "Lat: -6.xxx, Long: 106.xxx"
+    // Untuk amannya, kita buka search query google maps
+    final query = Uri.encodeComponent(locationInfo);
+    final url = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
+    
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } else {
+      debugPrint("Could not launch map");
+    }
+  }
+
+  String _formatTime(String? isoString) {
+    if (isoString == null) return '-';
+    try {
+      final date = DateTime.parse(isoString).toLocal();
+      return "${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}";
+    } catch (e) {
+      return '-';
+    }
+  }
+  
+  String _formatDate(String? isoString) {
+    if (isoString == null) return '-';
+    try {
+      final date = DateTime.parse(isoString).toLocal();
+      return "${date.day}/${date.month}/${date.year}";
+    } catch (e) {
+      return '-';
+    }
   }
 }

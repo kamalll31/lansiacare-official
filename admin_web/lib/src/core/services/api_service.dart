@@ -10,14 +10,15 @@ class ApiService {
   late Dio _dio;
   
   ApiService._internal() {
-    // Base URL sudah mengandung '/api/v1' dari AppConfig
+    // Pastikan Base URL tidak memiliki trailing slash ganda
     String baseUrl = AppConfig.apiBaseUrl;
     if (baseUrl.endsWith('/')) {
       baseUrl = baseUrl.substring(0, baseUrl.length - 1);
     }
 
+    // Konfigurasi Dio
     _dio = Dio(BaseOptions(
-      baseUrl: baseUrl, 
+      baseUrl: baseUrl, // Ekspektasi: https://.../api/v1
       connectTimeout: const Duration(seconds: 30),
       receiveTimeout: const Duration(seconds: 30),
       headers: {
@@ -32,6 +33,7 @@ class ApiService {
   void _initInterceptors() {
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
+        // Ambil token dari Local Storage
         final prefs = await SharedPreferences.getInstance();
         final token = prefs.getString('auth_token');
         
@@ -41,11 +43,6 @@ class ApiService {
         
         if (kDebugMode) {
           print('🚀 [${options.method}] ${options.uri}');
-          if (options.data != null) {
-            String dataStr = options.data.toString();
-            if (dataStr.length > 500) dataStr = '${dataStr.substring(0, 500)}...';
-            print('📤 Data: $dataStr');
-          }
         }
         
         return handler.next(options);
@@ -53,101 +50,66 @@ class ApiService {
       
       onResponse: (response, handler) {
         if (kDebugMode) {
-          print('✅ [${response.statusCode}] ${response.requestOptions.uri}');
+          print('✅ [${response.statusCode}] ${response.requestOptions.path}');
         }
         return handler.next(response);
       },
       
       onError: (DioException e, handler) async {
         if (kDebugMode) {
-          print('❌ [${e.response?.statusCode}] ${e.requestOptions.method} ${e.requestOptions.uri}');
-          print('📝 Error Message: ${e.message}');
-          
-          if (e.response != null) {
-            print('📝 Response Data: ${e.response?.data}');
+          print('❌ [${e.response?.statusCode}] ${e.requestOptions.path}');
+          print('📝 Error: ${e.message}');
+          if (e.response?.data != null) {
+            print('📝 Body: ${e.response?.data}');
           }
         }
         
+        // Handle Token Expired (401)
         if (e.response?.statusCode == 401) {
-          if (kDebugMode) print('⚠️ Unauthorized - Token Expired');
           final prefs = await SharedPreferences.getInstance();
           await prefs.remove('auth_token');
-          // Note: Ideally, emit a global event here to redirect to login
+          // Di UI nanti bisa ditambahkan logic untuk redirect ke Login
         }
         
         return handler.next(e);
       },
     ));
   }
-  
+
   // =================================================================
-  // GENERIC HTTP METHODS
+  // GENERIC METHODS
   // =================================================================
-  Future<Response> get(String path, {Map<String, dynamic>? queryParameters, Options? options}) async {
-    try {
-      return await _dio.get(path, queryParameters: queryParameters, options: options);
-    } on DioException {
-      rethrow;
-    } catch (e) {
-      throw DioException(
-        requestOptions: RequestOptions(path: path),
-        error: 'Unexpected error: $e',
-        type: DioExceptionType.unknown,
-      );
-    }
+  Future<Response> get(String path, {Map<String, dynamic>? queryParameters}) async {
+    return await _dio.get(path, queryParameters: queryParameters);
   }
   
   Future<Response> post(String path, {dynamic data, Options? options}) async {
-    try {
-      return await _dio.post(path, data: data, options: options);
-    } on DioException {
-      rethrow;
-    } catch (e) {
-      throw DioException(
-        requestOptions: RequestOptions(path: path),
-        error: 'Unexpected error: $e',
-        type: DioExceptionType.unknown,
-      );
-    }
+    return await _dio.post(path, data: data, options: options);
   }
   
-  Future<Response> put(String path, {dynamic data, Options? options}) async {
-    try {
-      return await _dio.put(path, data: data, options: options);
-    } on DioException {
-      rethrow;
-    } catch (e) {
-      throw DioException(
-        requestOptions: RequestOptions(path: path),
-        error: 'Unexpected error: $e',
-        type: DioExceptionType.unknown,
-      );
-    }
+  Future<Response> put(String path, {dynamic data}) async {
+    return await _dio.put(path, data: data);
   }
   
-  Future<Response> delete(String path, {dynamic data, Options? options}) async {
-    try {
-      return await _dio.delete(path, data: data, options: options);
-    } on DioException {
-      rethrow;
-    } catch (e) {
-      throw DioException(
-        requestOptions: RequestOptions(path: path),
-        error: 'Unexpected error: $e',
-        type: DioExceptionType.unknown,
-      );
-    }
+  Future<Response> delete(String path) async {
+    return await _dio.delete(path);
   }
 
   // =================================================================
-  // SPECIFIC ENDPOINTS (FIXED PATHS)
+  // SPECIFIC ENDPOINTS (SINKRONISASI BACKEND)
   // =================================================================
 
-  // --- HEALTH CHECK ---
-  // [FIX] Hapus '/api/v1' karena sudah ada di Base URL
+  // --- AUTH & HEALTH ---
   Future<Response> checkHealth() => get('/health');
   
-  // --- CONTENT ITEMS ---
+  Future<Response> login(String identifier, String password) {
+    return post('/auth/login', data: {
+      'email': identifier, // Backend handle email/phone di field ini
+      'password': password
+    });
+  }
+
+  // --- CONTENT ITEMS (Sesuai content.py) ---
   Future<Response> getContentItems({ 
     int page = 1,
     int perPage = 10,
@@ -155,8 +117,6 @@ class ApiService {
     String? category,
     String? status,
     String? search,
-    String? startDate,
-    String? endDate,
   }) {
     final query = <String, dynamic>{
       'page': page,
@@ -167,53 +127,32 @@ class ApiService {
     if (category != null && category.isNotEmpty) query['category'] = category;
     if (search != null && search.isNotEmpty) query['search'] = search;
     if (status != null && status.isNotEmpty) query['status'] = status;
-    if (startDate != null && startDate.isNotEmpty) query['start_date'] = startDate;
-    if (endDate != null && endDate.isNotEmpty) query['end_date'] = endDate;
     
-    // [FIX] Path disederhanakan
     return get('/content/admin/items', queryParameters: query);
   }
-  
-  Future<Response> analyzeUrl(String url) {
-    if (url.isEmpty) throw ArgumentError('URL cannot be empty');
-    if (!url.startsWith('http')) throw ArgumentError('URL must start with http:// or https://');
-    // [FIX] Path disederhanakan
-    return post('/content/admin/analyze-url', data: {'url': url});
-  }
 
-  Future<Response> createContent(dynamic data, {Options? options}) {
-    // [FIX] Path disederhanakan
-    return post('/content/admin/items', data: data, options: options);
+  Future<Response> createContent(dynamic data) {
+    return post('/content/admin/items', data: data);
   }
   
-  Future<Response> updateContent(int contentId, dynamic data, {Options? options}) {
-    // [FIX] Path disederhanakan
-    return put('/content/admin/items/$contentId', data: data, options: options);
+  Future<Response> updateContent(int contentId, dynamic data) {
+    return put('/content/admin/items/$contentId', data: data);
   }
   
   Future<Response> deleteContent(int contentId) {
-    // [FIX] Path disederhanakan
     return delete('/content/admin/items/$contentId');
   }
 
   Future<Response> uploadMedia(FormData data) {
-    // [FIX] Path disederhanakan
     return post('/content/admin/upload', data: data);
   }
 
   Future<Response> getContentDetail(int contentId) {
-    // [FIX] Path disederhanakan
     return get('/content/admin/items/$contentId');
   }
   
-  Future<Response> getContentStats() {
-    // [FIX] Path disederhanakan
-    return get('/content/admin/stats');
-  }
-
-  // --- DASHBOARD & USERS ---
+  // --- DASHBOARD & USERS (Sesuai admin.py) ---
   Future<Response> getDashboardStats() {
-    // [FIX] Path disederhanakan
     return get('/admin/dashboard/stats'); 
   }
   
@@ -230,16 +169,18 @@ class ApiService {
     if (role != null && role.isNotEmpty) query['role'] = role;
     if (search != null && search.isNotEmpty) query['search'] = search;
     
-    // [FIX] Path disederhanakan
     return get('/admin/users', queryParameters: query);
   }
   
   Future<Response> getUserDetail(int userId) {
-    // [FIX] Path disederhanakan
     return get('/admin/users/$userId');
   }
+
+  Future<Response> toggleUserStatus(int userId, bool isActive) {
+    return post('/admin/users/$userId/toggle-status', data: {'is_active': isActive});
+  }
   
-  // --- SYSTEM LOGS ---
+  // --- SYSTEM LOGS & EMERGENCY (Sesuai admin.py & emergency.py) ---
   Future<Response> getSystemLogs({
     int page = 1,
     int perPage = 50,
@@ -247,18 +188,20 @@ class ApiService {
   }) {
     final query = <String, dynamic>{'page': page, 'per_page': perPage};
     if (type != null && type.isNotEmpty) query['type'] = type;
-    // [FIX] Path disederhanakan
     return get('/admin/logs', queryParameters: query);
   }
   
-  // --- EMERGENCIES ---
   Future<Response> getRecentEmergencies() {
-    // [FIX] Path disederhanakan
-    return get('/emergency/monitor'); 
+    // Menggunakan endpoint admin untuk list riwayat
+    return get('/admin/emergencies/recent'); 
+  }
+
+  Future<Response> monitorEmergencyLive() {
+    // Menggunakan endpoint emergency untuk polling status realtime
+    return get('/emergency/monitor');
   }
   
-  // --- ANALYTICS ---
-  // [FIX] Path disederhanakan
+  // --- ANALYTICS (Sesuai admin.py) ---
   Future<Response> getUserEngagement() => get('/admin/analytics/user-engagement');
   Future<Response> getContentPerformance() => get('/admin/analytics/content-performance');
 

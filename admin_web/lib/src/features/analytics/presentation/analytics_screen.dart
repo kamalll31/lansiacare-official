@@ -16,17 +16,16 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   @override
   void initState() {
     super.initState();
-    // [FIX] Memicu pengambilan data otomatis saat halaman dibuka
+    // Fetch data otomatis saat layar dibuka
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        context.read<AnalyticsViewModel>().fetchAllStats();
+        context.read<AnalyticsViewModel>().fetchAllAnalytics();
       }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // [FIX] Menggunakan ViewModel dari MultiProvider global (main.dart)
     return Consumer<AnalyticsViewModel>(
       builder: (context, viewModel, child) {
         return Scaffold(
@@ -36,46 +35,54 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               IconButton(
                 icon: const Icon(Icons.refresh),
                 tooltip: 'Perbarui Data',
-                onPressed: () => viewModel.fetchAllStats(),
+                onPressed: () => viewModel.fetchAllAnalytics(),
               ),
             ],
           ),
           drawer: const AppDrawer(),
           body: viewModel.isLoading
               ? const Center(child: CircularProgressIndicator())
-              : _buildScrollableContent(viewModel),
+              : viewModel.error != null
+                  ? Center(child: Text('Error: ${viewModel.error}'))
+                  : _buildScrollableContent(viewModel),
         );
       },
     );
   }
 
   Widget _buildScrollableContent(AnalyticsViewModel viewModel) {
+    // Helper safe access untuk nested map
+    final stats = viewModel.summaryStats;
+    final users = stats['users'] as Map? ?? {};
+    final content = stats['content'] as Map? ?? {};
+    final emergency = stats['emergency'] as Map? ?? {};
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // --- HEADER CARDS ---
+          // --- 1. HEADER CARDS (Summary) ---
           Row(
             children: [
               _buildSummaryCard(
                 'Total Pengguna',
-                '${viewModel.generalStats['total_users'] ?? 0}',
+                '${users['total'] ?? 0}',
                 Icons.people,
                 Colors.blue,
               ),
               const SizedBox(width: 16),
               _buildSummaryCard(
-                'Konten Dilihat',
-                '${viewModel.generalStats['total_activities'] ?? 0}',
-                Icons.visibility,
-                Colors.purple,
+                'Total Konten',
+                '${content['total_articles'] ?? 0}',
+                Icons.article,
+                Colors.green,
               ),
               const SizedBox(width: 16),
               _buildSummaryCard(
-                'Darurat (SOS)',
-                '${viewModel.generalStats['total_emergencies'] ?? 0}',
-                Icons.warning,
+                'SOS (24 Jam)',
+                '${emergency['sos_last_24h'] ?? 0}',
+                Icons.warning_amber_rounded,
                 Colors.red,
               ),
             ],
@@ -83,67 +90,63 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           
           const SizedBox(height: 24),
 
-          // --- CHARTS ROW 1 ---
-          Row(
-            children: [
-              Expanded(
-                child: _buildChartCard(
-                  title: 'Komposisi Pengguna',
-                  chart: SfCircularChart(
-                    legend: const Legend(isVisible: true, position: LegendPosition.bottom),
-                    series: <CircularSeries>[
-                      DoughnutSeries<ChartData, String>(
-                        dataSource: viewModel.userRoleData,
-                        xValueMapper: (ChartData data, _) => data.x,
-                        yValueMapper: (ChartData data, _) => data.y,
-                        pointColorMapper: (ChartData data, _) => data.color,
-                        dataLabelSettings: const DataLabelSettings(isVisible: true),
-                      )
-                    ],
+          // --- 2. ROW GRAFIK 1 (User & Emergency) ---
+          SizedBox(
+            height: 350, // Fixed height untuk row grafik
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // GRAFIK 1: Komposisi User (Pie Chart)
+                Expanded(
+                  flex: 1,
+                  child: _buildChartCard(
+                    title: 'Komposisi User',
+                    chart: SfCircularChart(
+                      legend: const Legend(isVisible: true, position: LegendPosition.bottom),
+                      series: <CircularSeries>[
+                        DoughnutSeries<ChartData, String>(
+                          dataSource: viewModel.userRoleDistribution,
+                          xValueMapper: (ChartData data, _) => data.x,
+                          yValueMapper: (ChartData data, _) => data.y,
+                          pointColorMapper: (ChartData data, _) => data.color,
+                          dataLabelSettings: const DataLabelSettings(isVisible: true),
+                          enableTooltip: true,
+                        )
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _buildChartCard(
-                  title: 'Distribusi Tipe Konten',
-                  chart: SfCircularChart(
-                    legend: const Legend(isVisible: true, position: LegendPosition.bottom),
-                    series: <CircularSeries>[
-                      PieSeries<ChartData, String>(
-                        dataSource: viewModel.contentDistributionData,
-                        xValueMapper: (ChartData data, _) => data.x,
-                        yValueMapper: (ChartData data, _) => data.y,
-                        pointColorMapper: (ChartData data, _) => data.color,
-                        dataLabelSettings: const DataLabelSettings(isVisible: true),
-                      )
-                    ],
+                
+                const SizedBox(width: 16),
+                
+                // GRAFIK 2: Konten Terpopuler (Bar Chart)
+                // Menggantikan Line Chart karena data backend adalah Top Content
+                Expanded(
+                  flex: 2, // Lebih lebar
+                  child: _buildChartCard(
+                    title: 'Konten Terpopuler (Top 5)',
+                    chart: SfCartesianChart(
+                      primaryXAxis: const CategoryAxis(
+                        labelStyle: TextStyle(fontSize: 10), // Font kecil agar muat
+                      ),
+                      primaryYAxis: const NumericAxis(
+                        title: AxisTitle(text: 'Views'),
+                      ),
+                      tooltipBehavior: TooltipBehavior(enable: true),
+                      series: <CartesianSeries<ContentPerformanceData, String>>[
+                        BarSeries<ContentPerformanceData, String>(
+                          dataSource: viewModel.topContent,
+                          xValueMapper: (ContentPerformanceData data, _) => 
+                              data.title.length > 15 ? '${data.title.substring(0, 15)}...' : data.title,
+                          yValueMapper: (ContentPerformanceData data, _) => data.views,
+                          name: 'Views',
+                          color: Colors.purple,
+                          dataLabelSettings: const DataLabelSettings(isVisible: true),
+                        )
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 24),
-
-          // --- CHARTS ROW 2: Tren Mingguan ---
-          _buildChartCard(
-            title: 'Tren Aktivitas Mingguan',
-            height: 350,
-            chart: SfCartesianChart(
-              primaryXAxis: const CategoryAxis(),
-              primaryYAxis: const NumericAxis(title: AxisTitle(text: 'Jumlah Views')),
-              tooltipBehavior: TooltipBehavior(enable: true),
-              series: <CartesianSeries<WeeklyChartData, String>>[
-                LineSeries<WeeklyChartData, String>(
-                  dataSource: viewModel.weeklyViewsData,
-                  xValueMapper: (WeeklyChartData data, _) => data.date,
-                  yValueMapper: (WeeklyChartData data, _) => data.views,
-                  name: 'Aktivitas',
-                  color: Colors.blue,
-                  markerSettings: const MarkerSettings(isVisible: true),
-                  dataLabelSettings: const DataLabelSettings(isVisible: true),
-                )
               ],
             ),
           ),
@@ -170,11 +173,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 child: Icon(icon, color: color, size: 30),
               ),
               const SizedBox(width: 16),
-              Flexible(
+              Flexible( // Agar text wrap jika layar sempit
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                    Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
                     Text(title, style: const TextStyle(fontSize: 13, color: Colors.grey), overflow: TextOverflow.ellipsis),
                   ],
                 ),
@@ -186,12 +190,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  Widget _buildChartCard({required String title, required Widget chart, double height = 300}) {
+  Widget _buildChartCard({required String title, required Widget chart}) {
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Container(
-        height: height,
+      child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
