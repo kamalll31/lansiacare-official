@@ -2,22 +2,22 @@
 
 class AppConfig {
   // Private Constructor
-  AppConfig._(); //
+  AppConfig._();
 
   // =========================================================
-  // 1. URL BACKEND (HARDCODED)
+  // 1. URL BACKEND (SINKRON DENGAN VERCEL)
   // =========================================================
 
-  // Kita matikan dotenv sementara supaya Vercel tidak crash mencari file .env yang hilang.
+  // Mengarahkan ke backend yang sudah status "Healthy" dan "Connected"
   static String get apiBaseUrl {
-    return 'https://lansiacare-backend.vercel.app';
+    return 'https://lansiacare-official.vercel.app';
   }
 
   // =========================================================
   // 2. SUPABASE CONFIG (Opsional)
   // =========================================================
 
-  // Biarkan string kosong dulu jika belum urgent dipakai
+  // Biarkan string kosong dulu jika belum urgent dipakai di frontend
   static String get supabaseUrl => '';
   static String get supabaseAnonKey => '';
 
