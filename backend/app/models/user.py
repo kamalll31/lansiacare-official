@@ -1,6 +1,6 @@
 from app import db
 from datetime import datetime
-from werkzeug.security import generate_password_hash, check_password_hash
+import bcrypt  # <-- Kita gunakan library ini agar sesuai requirements.txt
 from sqlalchemy.ext.hybrid import hybrid_property
 
 class User(db.Model):
@@ -28,11 +28,27 @@ class User(db.Model):
     activities = db.relationship('Activity', backref='user', lazy='dynamic')
     emergency_contacts = db.relationship('EmergencyContact', backref='user', lazy='dynamic')
 
+    # ==========================================================
+    # 🔑 LOGIKA PASSWORD (BCRYPT - FIX LOGIN)
+    # ==========================================================
+
     def set_password(self, password):
-        self.password_hash = generate_password_hash(password)
+        if not password: return
+        # Generate salt dan hash menggunakan bcrypt
+        hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        self.password_hash = hashed.decode('utf-8')
         
     def check_password(self, password):
-        return check_password_hash(self.password_hash, password)
+        if not self.password_hash or not password: return False
+        try:
+            # Cek kecocokan password dengan hash di database
+            return bcrypt.checkpw(
+                password.encode('utf-8'), 
+                self.password_hash.encode('utf-8')
+            )
+        except Exception as e:
+            print(f"Error checking password: {e}")
+            return False
 
     @hybrid_property
     def full_name(self):
@@ -71,12 +87,12 @@ class User(db.Model):
         else:
             data['lansia_profile'] = None
 
-        # Stats untuk Admin Dashboard
+        # Stats dengan Error Handling aman
         try:
             data['stats'] = {
-                'activities_count': self.activities.count(),
-                'emergency_contacts_count': self.emergency_contacts.count(),
-                'content_count': self.contents.count()
+                'activities_count': self.activities.count() if self.activities else 0,
+                'emergency_contacts_count': self.emergency_contacts.count() if self.emergency_contacts else 0,
+                'content_count': self.contents.count() if self.contents else 0
             }
         except Exception:
             data['stats'] = {'activities_count': 0, 'emergency_contacts_count': 0, 'content_count': 0}
@@ -88,7 +104,7 @@ class User(db.Model):
 
 class UserProfile(db.Model):
     __tablename__ = 'user_profiles'
-    __table_args__ = {'extend_existing': True} # WAJIB ADA
+    __table_args__ = {'extend_existing': True} 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     full_name = db.Column(db.String(100), nullable=False)
@@ -97,7 +113,7 @@ class UserProfile(db.Model):
 
 class LansiaProfile(db.Model):
     __tablename__ = 'lansia_profiles'
-    __table_args__ = {'extend_existing': True} # WAJIB ADA
+    __table_args__ = {'extend_existing': True} 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     blood_type = db.Column(db.String(5))

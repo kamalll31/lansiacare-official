@@ -7,7 +7,7 @@ from flask_migrate import Migrate
 from dotenv import load_dotenv
 from sqlalchemy import text 
 
-# Load environment variables dari file .env
+# Load environment variables
 load_dotenv()
 
 # Inisialisasi Ekstensi Global
@@ -19,35 +19,30 @@ def create_app():
     app = Flask(__name__)
     
     # ==================================================================
-    # 1. KONFIGURASI UTAMA (DATABASE & SECURITY)
+    # 1. KONFIGURASI UTAMA
     # ==================================================================
     basedir = os.path.abspath(os.path.dirname(__file__))
-    
-    # Menangani DATABASE_URL (Support Supabase/PostgreSQL & SQLite)
     database_url = os.environ.get('DATABASE_URL')
+    
     if not database_url:
         database_url = 'sqlite:///' + os.path.join(basedir, '../instance/dev.db')
     
-    # Fix untuk dialek postgresql (SQLAlchemy mewajibkan postgresql://)
     if database_url and database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql://", 1)
 
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    
-    # Konfigurasi JWT & Upload
-    app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'dev-secret-change-me')
-    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 86400  # 24 jam
-    app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # Max 100MB
+    app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'lansiacare-official-secret')
+    app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 86400 
+    app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024 
     
     # ==================================================================
-    # 2. INISIALISASI EKSTENSI KE APP
+    # 2. INISIALISASI EKSTENSI
     # ==================================================================
     db.init_app(app)
     jwt.init_app(app)
     migrate.init_app(app, db)
     
-    # Load Models agar terdeteksi oleh Alembic/Migrate
     with app.app_context():
         try:
             from app import models
@@ -55,61 +50,46 @@ def create_app():
             pass
     
     # ==================================================================
-    # 3. KONFIGURASI CORS (WEB FRIENDLY)
+    # 3. KONFIGURASI CORS (PENTING UNTUK FLUTTER WEB)
     # ==================================================================
     CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
-    @app.after_request
-    def after_request(response):
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
-        return response
-
     # ==================================================================
-    # 4. [FITUR DARURAT SECURE] SETUP DATABASE & RESET TOTAL
+    # 4. [FIXED] SETUP DATABASE (Ditambahkan /api/v1 agar tidak 404)
     # ==================================================================
-    @app.route('/setup-db-darurat')
+    @app.route('/api/v1/setup-db-darurat') # <-- Perbaikan di sini
     def setup_database_and_admin():
-        # [PERBAIKAN KEAMANAN] Tambahkan pengecekan key sederhana agar tidak bisa diakses orang asing
-        # Akses: /setup-db-darurat?key=lansiacare2026
         if request.args.get('key') != "lansiacare2026":
             return jsonify({"status": "error", "message": "Unauthorized"}), 403
 
         try:
-            # RESET DATABASE
+            # RESET DATABASE (Hati-hati: Menghapus data lama)
             db.drop_all() 
             db.create_all()
             status_msg = ["♻️ Database tables reset and recreated."]
 
-            # Import model di dalam fungsi untuk menghindari circular import
             from app.models import User, UserProfile
             
             admin_phone = "08123456789"
             
-            # Buat Admin Baru
-            existing_admin = User.query.filter_by(phone=admin_phone).first()
-            if not existing_admin:
-                new_admin = User(
-                    phone=admin_phone,
-                    role="admin",
-                    is_active=True,
-                    is_verified=True
-                )
-                new_admin.set_password("admin123")
-                db.session.add(new_admin)
-                db.session.flush() # Agar ID admin ter-generate
+            new_admin = User(
+                phone=admin_phone,
+                role="admin",
+                is_active=True,
+                is_verified=True
+            )
+            new_admin.set_password("admin123")
+            db.session.add(new_admin)
+            db.session.flush() 
 
-                admin_profile = UserProfile(
-                    user_id=new_admin.id,
-                    full_name="Super Admin Vercel",
-                    address="Kantor Pusat Lansia Care (Cloud)"
-                )
-                db.session.add(admin_profile)
-                db.session.commit()
-                status_msg.append(f"🚀 User Admin {admin_phone} BERHASIL DIBUAT!")
-            else:
-                status_msg.append("ℹ️ User Admin sudah ada.")
+            admin_profile = UserProfile(
+                user_id=new_admin.id,
+                full_name="Super Admin Vercel",
+                address="Kantor Pusat Lansia Care (Cloud)"
+            )
+            db.session.add(admin_profile)
+            db.session.commit()
+            status_msg.append(f"🚀 User Admin {admin_phone} BERHASIL DIBUAT!")
 
             return jsonify({
                 "status": "success", 
@@ -122,69 +102,36 @@ def create_app():
             return jsonify({"status": "error", "message": f"Error: {str(e)}"}), 500
 
     # ==================================================================
-    # 5. REGISTER BLUEPRINTS (ROUTES) - SESUAI FILE ASLI ANDA
+    # 5. REGISTER BLUEPRINTS
     # ==================================================================
-    
-    # 1. Auth Routes
+    # Gunakan try-except untuk mencegah aplikasi crash jika file belum ada
     try:
         from app.api.v1.auth import auth_bp
         app.register_blueprint(auth_bp, url_prefix='/api/v1/auth')
-    except ImportError as e:
-        print(f"⚠️ Auth Blueprint Error: {e}")
-
-    # 2. Users Routes
-    try:
+        
         from app.api.v1.users import users_bp 
         app.register_blueprint(users_bp, url_prefix='/api/v1/users')
-    except ImportError as e:
-        print(f"⚠️ Users Blueprint Error: {e}")
-    
-    # 3. Activities Routes
-    try:
+        
         from app.api.v1.activities import activities_bp
         app.register_blueprint(activities_bp, url_prefix='/api/v1/activities')
-    except ImportError as e:
-        print(f"⚠️ Activities Blueprint Error: {e}")
 
-    # 4. Admin Routes
-    try:
         from app.api.v1.admin import admin_bp
         app.register_blueprint(admin_bp, url_prefix='/api/v1/admin')
-    except ImportError as e:
-        print(f"⚠️ Admin Blueprint Error: {e}")
 
-    # 5. Content Routes
-    try:
         from app.api.v1.content import content_bp
         app.register_blueprint(content_bp, url_prefix='/api/v1/content')
-    except ImportError as e:
-        print(f"⚠️ Content Blueprint Error: {e}")
-    
-    # 6. Family Routes
-    try:
+        
         from app.api.v1.family import family_bp
         app.register_blueprint(family_bp, url_prefix='/api/v1/family')
-    except ImportError as e:
-        print(f"⚠️ Family Blueprint Error: {e}")
 
-    # 7. Emergency Routes
-    try:
         from app.api.v1.emergency import emergency_bp
         app.register_blueprint(emergency_bp, url_prefix='/api/v1/emergency')
     except ImportError as e:
-        print(f"⚠️ Emergency Blueprint Error: {e}")
+        print(f"⚠️ Blueprint Error: {e}")
 
     # ==================================================================
     # 6. ERROR HANDLERS & BASIC ROUTES
     # ==================================================================
-    @app.errorhandler(404)
-    def not_found(e):
-        return jsonify({'success': False, 'error': 'Endpoint not found'}), 404
-
-    @app.errorhandler(500)
-    def internal_error(e):
-        return jsonify({'success': False, 'error': 'Internal Server Error'}), 500
-    
     @app.route('/')
     def index():
         return jsonify({'status': 'online', 'service': 'Lansia Care Backend v1.0'})
@@ -196,5 +143,9 @@ def create_app():
             return jsonify({'status': 'healthy', 'database': 'connected'})
         except Exception as e:
             return jsonify({'status': 'unhealthy', 'database': f'error: {str(e)}'}), 500
+            
+    @app.errorhandler(404)
+    def not_found(e):
+        return jsonify({'success': False, 'error': 'Endpoint not found'}), 404
     
     return app
