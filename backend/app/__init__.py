@@ -144,7 +144,7 @@ def create_app():
     @app.route('/')
     def index():
         return jsonify({'status': 'online', 'service': 'Lansia Care Backend v1.0'})
-    
+    #
     @app.route('/api/v1/health')
     def health_check():
         try:
@@ -155,6 +155,6 @@ def create_app():
             
     @app.errorhandler(404)
     def not_found(e):
-        return jsonify({'success': False, 'error': 'Endpoint not found'}), 404
+        return jsonify({'success': False, 'error': 'Endpoint not found'}), 404 
     
-    return app
+    return app 
