@@ -37,5 +37,5 @@ class AppConfig {
   static const int dashboardPageSize = 10;
 
   // Cache
-  static const Duration cacheDuration = Duration(minutes: 5); //
+  static const Duration cacheDuration = Duration(minutes: 5);
 }

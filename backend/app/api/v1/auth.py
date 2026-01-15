@@ -6,7 +6,7 @@ import logging
 
 # Pastikan Anda sudah update models.py dengan tabel OTPSession
 from app.models import User, UserProfile, OTPSession, db
-
+#
 # Setup Logger
 logger = logging.getLogger(__name__)
 
