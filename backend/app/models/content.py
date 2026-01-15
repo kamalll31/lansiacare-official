@@ -33,11 +33,12 @@ class ContentItem(db.Model):
     is_published = db.Column(db.Boolean, default=False, index=True)
     view_count = db.Column(db.Integer, default=0)
     
+    # Relasi ke User
     author_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'))
     
-    # Relasi agar bisa ambil nama penulis
-    # Penambahan lazy='joined' agar performa query lebih cepat
-    # author = db.relationship("User", backref="written_contents", lazy="joined")
+    # [FIX] INI BARIS YANG HILANG SEBELUMNYA
+    # Tanpa ini, relasi di UrlAnalysis akan error (Mapper Failure)
+    url_analysis_id = db.Column(db.Integer, db.ForeignKey('url_analyses.id', ondelete='SET NULL'), nullable=True)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -72,7 +73,7 @@ class ContentItem(db.Model):
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
 
-# Model Pendukung (Biarkan seperti adanya, sudah benar)
+# Model Pendukung (Tidak ada perubahan, sudah benar)
 class ContentTranscript(db.Model):
     __tablename__ = 'content_transcripts'
     __table_args__ = {'extend_existing': True}
@@ -90,6 +91,8 @@ class UrlAnalysis(db.Model):
     title = db.Column(db.String(500))
     is_valid = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relasi ini sekarang akan berhasil karena url_analysis_id sudah ada di ContentItem
     content_items = db.relationship('ContentItem', backref='url_analysis', lazy='dynamic')
 
 class ContentConsumption(db.Model):
