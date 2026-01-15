@@ -20,7 +20,7 @@
       "destination": "backend/run.py"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!api|setup-db-darurat).*)",
       "destination": "admin_web/build/web/index.html"
     }
   ]

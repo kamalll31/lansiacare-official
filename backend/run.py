@@ -1,33 +1,41 @@
+import os
+import sys
+
+# Menambahkan path folder saat ini ke sys.path agar Vercel tidak bingung mencari folder 'app'
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from app import create_app, db
 from flask_migrate import Migrate
 
-# [CLEAN CODE] Tidak perlu import CORS di sini lagi.
-# Konfigurasi CORS sudah terpusat di app/__init__.py
-
+# 1. Inisialisasi Aplikasi Utama
+# Variabel 'app' ini yang akan dicari oleh Vercel Runtime
 app = create_app()
 migrate = Migrate(app, db)
 
-# ==========================================
-# COMMANDS UNTUK DATABASE (Terminal)
-# ==========================================
+# ==================================================================
+# 2. CUSTOM CLI COMMANDS (Khusus Terminal Lokal)
+# ==================================================================
+# Catatan: Ini tidak bisa diakses via browser di Vercel
 @app.cli.command("init-db")
 def init_db():
     """Initialize the database."""
-    db.drop_all()
-    db.create_all()
-    print("Database initialized successfully!")
+    with app.app_context():
+        db.create_all()
+        print("✅ Database initialized successfully!")
 
 @app.cli.command("reset-db")
 def reset_db():
-    """Reset the database."""
-    db.drop_all()
-    db.create_all()
-    print("Database reset successfully!")
+    """Reset the database (DROP ALL TABLES)."""
+    with app.app_context():
+        db.drop_all()
+        db.create_all()
+        print("♻️ Database reset successfully!")
 
-# ==========================================
-# ENTRY POINT (Hanya untuk Lokal)
-# ==========================================
+# ==================================================================
+# 3. ENTRY POINT (Hanya untuk Python Interpreter)
+# ==================================================================
 if __name__ == '__main__':
-    # Vercel tidak membaca blok ini.
-    # Blok ini hanya jalan saat Anda mengetik 'python run.py' di laptop.
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Blok ini diabaikan oleh Vercel
+    # Gunakan hanya untuk menjalankan server di laptop (localhost)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=True, host='0.0.0.0', port=port)
