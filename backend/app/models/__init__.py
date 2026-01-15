@@ -1,25 +1,19 @@
 from app import db
 from datetime import datetime
 
-# 1. IMPORT DARI FILE YANG SUDAH DIPISAH (Agar tidak duplikat)
-from .user import User
+# 1. IMPORT DARI FILE LAIN (Satu sumber kebenaran)
+# Kita ambil User, UserProfile, dan LansiaProfile dari user.py
+from .user import User, UserProfile, LansiaProfile
 from .content import ContentItem, ContentTranscript, ContentConsumption, UrlAnalysis
 
 # ==============================================================================
-# 2. MODEL PROFILE & KELUARGA (Tetap disini sesuai kode Anda)
+# 2. MODEL SESSION & KELUARGA (Model unik yang hanya ada di sini)
 # ==============================================================================
-class UserProfile(db.Model):
-    __tablename__ = 'user_profiles'
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), unique=True, nullable=False)
-    full_name = db.Column(db.String(100), nullable=False)
-    address = db.Column(db.String(255))
-    birth_date = db.Column(db.Date)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class OTPSession(db.Model):
     __tablename__ = 'otp_sessions'
+    __table_args__ = (db.Index('idx_otp_phone_used', 'phone', 'is_used'), {'extend_existing': True})
+    
     id = db.Column(db.Integer, primary_key=True)
     phone = db.Column(db.String(20), nullable=False, index=True)
     otp_code = db.Column(db.String(6), nullable=False)
@@ -28,23 +22,14 @@ class OTPSession(db.Model):
     is_used = db.Column(db.Boolean, default=False)
     expires_at = db.Column(db.DateTime, nullable=False, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    __table_args__ = (db.Index('idx_otp_phone_used', 'phone', 'is_used'),)
     
     def is_expired(self):
         return datetime.utcnow() > self.expires_at
 
-class LansiaProfile(db.Model):
-    __tablename__ = 'lansia_profiles'
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), unique=True)
-    blood_type = db.Column(db.String(5))
-    medical_history = db.Column(db.Text)
-    emergency_notes = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
 class FamilyConnection(db.Model):
     __tablename__ = 'family_connections'
+    __table_args__ = (db.UniqueConstraint('lansia_user_id', 'family_user_id', name='uq_family_connection'), {'extend_existing': True})
+    
     id = db.Column(db.Integer, primary_key=True)
     lansia_user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     family_user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
@@ -52,10 +37,11 @@ class FamilyConnection(db.Model):
     access_level = db.Column(db.String(20), default='basic')
     is_verified = db.Column(db.Boolean, default=False)       
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    __table_args__ = (db.UniqueConstraint('lansia_user_id', 'family_user_id', name='uq_family_connection'),)
 
 class EmergencyContact(db.Model):
     __tablename__ = 'emergency_contacts'
+    __table_args__ = {'extend_existing': True}
+    
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     name = db.Column(db.String(100), nullable=False)
@@ -67,8 +53,11 @@ class EmergencyContact(db.Model):
 # ==============================================================================
 # 3. COMMUNITY ACTIVITY & LOGS
 # ==============================================================================
+
 class Activity(db.Model):
     __tablename__ = 'activities'
+    __table_args__ = {'extend_existing': True}
+    
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text)
@@ -86,6 +75,8 @@ class Activity(db.Model):
 
 class ActivityParticipant(db.Model):
     __tablename__ = 'activity_participants'
+    __table_args__ = {'extend_existing': True}
+    
     id = db.Column(db.Integer, primary_key=True)
     activity_id = db.Column(db.Integer, db.ForeignKey('activities.id', ondelete='CASCADE'))
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'))
@@ -94,6 +85,8 @@ class ActivityParticipant(db.Model):
 
 class DailyTask(db.Model):
     __tablename__ = 'daily_tasks'
+    __table_args__ = {'extend_existing': True}
+    
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     title = db.Column(db.String(100), nullable=False)
@@ -104,6 +97,8 @@ class DailyTask(db.Model):
 
 class Medication(db.Model):
     __tablename__ = 'medication'
+    __table_args__ = {'extend_existing': True}
+    
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     medicine_name = db.Column(db.String(100), nullable=False)
@@ -114,44 +109,11 @@ class Medication(db.Model):
 
 class SystemLog(db.Model):
     __tablename__ = 'system_logs'
+    __table_args__ = {'extend_existing': True}
+    
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
     action = db.Column(db.String(100))
     details = db.Column(db.Text)
     ip_address = db.Column(db.String(50))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-# ==============================================================================
-# SETUP RELATIONSHIPS (PENGHUBUNG ANTAR FILE)
-# ==============================================================================
-def setup_relationships():
-    # Profile & Lansia
-    User.profile = db.relationship('UserProfile', backref='user', uselist=False, cascade='all, delete-orphan')
-    User.lansia_profile = db.relationship('LansiaProfile', backref='user', uselist=False, cascade='all, delete-orphan')
-    
-    # OTP
-    User.otp_sessions = db.relationship(
-        'OTPSession', 
-        primaryjoin='foreign(OTPSession.phone) == User.phone', 
-        lazy='dynamic', 
-        cascade='all, delete-orphan'
-    )
-    
-    # Content Relationships (Sudah di define di User dan ContentItem, kita tinggal sambung yang complex)
-    ContentItem.transcripts = db.relationship('ContentTranscript', backref='content_item', lazy='dynamic', cascade='all, delete-orphan')
-    ContentItem.consumptions = db.relationship('ContentConsumption', backref='content_item', lazy='dynamic', cascade='all, delete-orphan')
-
-    # Community Activities
-    User.activities = db.relationship('Activity', backref='creator', lazy='dynamic', foreign_keys='Activity.created_by')
-    User.participations = db.relationship('ActivityParticipant', backref='user', lazy='dynamic')
-    Activity.participants = db.relationship('ActivityParticipant', backref='activity', lazy='dynamic', cascade='all, delete-orphan')
-    
-    # Personal Schedules
-    User.daily_tasks = db.relationship('DailyTask', backref='user', lazy='dynamic', cascade='all, delete-orphan')
-    User.medications = db.relationship('Medication', backref='user', lazy='dynamic', cascade='all, delete-orphan')
-    
-    # Emergency Contact
-    User.emergency_contacts = db.relationship('EmergencyContact', backref='lansia', lazy='dynamic', cascade='all, delete-orphan')
-
-# JALANKAN SETUP
-setup_relationships()
