@@ -12,10 +12,6 @@
   ],
   "rewrites": [
     {
-      "source": "/api/v1/(.*)",
-      "destination": "backend/run.py"
-    },
-    {
       "source": "/api/(.*)",
       "destination": "backend/run.py"
     },
@@ -24,7 +20,11 @@
       "destination": "backend/run.py"
     },
     {
-      "source": "/((?!api|setup-db-darurat|.*\\..*).*)",
+      "source": "/(.*)\\.(.*)",
+      "destination": "admin_web/build/web/$1.$2"
+    },
+    {
+      "source": "/(.*)",
       "destination": "admin_web/build/web/index.html"
     }
   ]
