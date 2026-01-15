@@ -27,14 +27,23 @@ def create_app():
     if not database_url:
         database_url = 'sqlite:///' + os.path.join(basedir, '../instance/dev.db')
     
+    # Fix untuk Postgres di Vercel/Heroku (postgres:// -> postgresql://)
     if database_url and database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql://", 1)
 
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    
+    # [FIX] AMBIL KUNCI DARI VERCEL
+    # Tanpa SECRET_KEY, Flask Session sering crash
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'rahasia-default-dev-key')
     app.config['JWT_SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'lansiacare-official-secret')
+    
     app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 86400 
     app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024 
+    
+    # [PENTING] Agar error asli terlihat di Log Vercel (Bukan cuma 500)
+    app.config['PROPAGATE_EXCEPTIONS'] = True 
     
     # ==================================================================
     # 2. INISIALISASI EKSTENSI
@@ -50,20 +59,20 @@ def create_app():
             pass
     
     # ==================================================================
-    # 3. KONFIGURASI CORS (PENTING UNTUK FLUTTER WEB)
+    # 3. KONFIGURASI CORS
     # ==================================================================
     CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
     # ==================================================================
-    # 4. [FIXED] SETUP DATABASE (Ditambahkan /api/v1 agar tidak 404)
+    # 4. SETUP DATABASE DARURAT
     # ==================================================================
-    @app.route('/api/v1/setup-db-darurat') # <-- Perbaikan di sini
+    @app.route('/api/v1/setup-db-darurat')
     def setup_database_and_admin():
         if request.args.get('key') != "lansiacare2026":
             return jsonify({"status": "error", "message": "Unauthorized"}), 403
 
         try:
-            # RESET DATABASE (Hati-hati: Menghapus data lama)
+            # RESET DATABASE
             db.drop_all() 
             db.create_all()
             status_msg = ["♻️ Database tables reset and recreated."]
@@ -78,7 +87,8 @@ def create_app():
                 is_active=True,
                 is_verified=True
             )
-            new_admin.set_password("admin123")
+            # Ini akan menggunakan bcrypt dari models/user.py
+            new_admin.set_password("admin123") 
             db.session.add(new_admin)
             db.session.flush() 
 
@@ -104,7 +114,6 @@ def create_app():
     # ==================================================================
     # 5. REGISTER BLUEPRINTS
     # ==================================================================
-    # Gunakan try-except untuk mencegah aplikasi crash jika file belum ada
     try:
         from app.api.v1.auth import auth_bp
         app.register_blueprint(auth_bp, url_prefix='/api/v1/auth')
@@ -130,7 +139,7 @@ def create_app():
         print(f"⚠️ Blueprint Error: {e}")
 
     # ==================================================================
-    # 6. ERROR HANDLERS & BASIC ROUTES
+    # 6. BASIC ROUTES
     # ==================================================================
     @app.route('/')
     def index():
