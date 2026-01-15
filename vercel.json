@@ -1,31 +1,13 @@
 {
   "version": 2,
   "builds": [
-    {
-      "src": "backend/run.py",
-      "use": "@vercel/python"
-    },
-    {
-      "src": "admin_web/build/web/**",
-      "use": "@vercel/static"
-    }
+    { "src": "backend/run.py", "use": "@vercel/python" },
+    { "src": "admin_web/build/web/**", "use": "@vercel/static" }
   ],
   "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "backend/run.py"
-    },
-    {
-      "source": "/setup-db-darurat",
-      "destination": "backend/run.py"
-    },
-    {
-      "source": "/(.*)\\.(.*)",
-      "destination": "admin_web/build/web/$1.$2"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "admin_web/build/web/index.html"
-    }
+    { "source": "/api/v1/(.*)", "destination": "backend/run.py" },
+    { "source": "/api/(.*)", "destination": "backend/run.py" },
+    { "source": "/setup-db-darurat", "destination": "backend/run.py" },
+    { "source": "/(.*)", "destination": "admin_web/build/web/index.html" }
   ]
 }
